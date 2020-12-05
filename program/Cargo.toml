@@ -1,0 +1,29 @@
+[package]
+name = "mango"
+version = "0.1.0"
+authors = ["blockworks"]
+edition = "2018"
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+solana-program = "*"
+spl-token = { version = "*", features=["no-entrypoint"] }
+byteorder = "*"
+arrayref = "*"
+num_enum = "*"
+bytemuck = "*"
+safe-transmute = "*"
+enumflags2 = "*"
+static_assertions = "*"
+thiserror = "*"
+serde = "*"
+bincode = "*"
+
+[dev-dependencies]
+solana-sdk = "*"
+
+[lib]
+name = "mango"
+crate-type = ["cdylib", "lib"]
