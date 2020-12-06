@@ -20,6 +20,7 @@ static_assertions = "*"
 thiserror = "*"
 serde = "*"
 bincode = "*"
+common = { version = "*", path = "../common" }
 
 [dev-dependencies]
 solana-sdk = "*"

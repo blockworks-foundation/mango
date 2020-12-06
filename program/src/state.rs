@@ -7,9 +7,10 @@ use bytemuck::{from_bytes, from_bytes_mut, Pod, Zeroable};
 use solana_program::pubkey::Pubkey;
 use enumflags2::BitFlags;
 
-
-pub const NUM_TOKENS: usize = 2;
+/// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
+pub const NUM_TOKENS: usize = 4;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
+
 
 pub trait Loadable: Pod {
     fn load_mut<'a>(account: &'a AccountInfo) -> Result<RefMut<'a, Self>, ProgramError> {
@@ -44,6 +45,7 @@ pub enum AccountFlag {
 
 /// A group of spot markets that can be cross margined together
 /// TODO need plans to migrate smart contract
+/// TODO add in fees for devs and UI hosters
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct MangoGroup {
