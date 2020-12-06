@@ -1,5 +1,7 @@
 pub mod processor;
 pub mod state;
+pub mod instruction;
+pub mod error;
 
 use solana_program::{
     account_info::AccountInfo, entrypoint::ProgramResult, entrypoint, pubkey::Pubkey,
