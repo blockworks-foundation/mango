@@ -1,8 +1,9 @@
+
 use std::convert::Into;
 use std::str::FromStr;
 
 use anyhow::{anyhow, format_err, Result};
-use bytemuck::{bytes_of, Pod};
+use bytemuck::{bytes_of, Pod, Contiguous};
 use rand::rngs::OsRng;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcSendTransactionConfig;
@@ -350,7 +351,7 @@ pub fn gen_signer_key(
 
 pub fn create_signer_key_and_nonce(program_id: &Pubkey, acc_pk: &Pubkey) -> (Pubkey, u64) {
 
-    for i in 0..256 {
+    for i in 0..=u64::MAX_VALUE {
         if let Ok(pk) = gen_signer_key(i, acc_pk, program_id) {
             return (pk, i);
         }
@@ -380,10 +381,10 @@ pub fn send_instructions(
         recent_hash,
     );
 
-    // let result = simulate_transaction(&client, &txn, true, CommitmentConfig::single_gossip())?;
-    // if let Some(e) = result.value.err {
-    //     return Err(format_err!("simulate_transaction error: {:?}", e));
-    // }
+    let result = simulate_transaction(&client, &txn, true, CommitmentConfig::single_gossip())?;
+    if let Some(e) = result.value.err {
+        return Err(format_err!("simulate_transaction error: {:?}", e));
+    }
     send_txn(&client, &txn, false)?;
     Ok(())
 }

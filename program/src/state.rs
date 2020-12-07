@@ -8,7 +8,7 @@ use solana_program::pubkey::Pubkey;
 use enumflags2::BitFlags;
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
-pub const NUM_TOKENS: usize = 4;
+pub const NUM_TOKENS: usize = 3;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
 
 
@@ -55,15 +55,16 @@ pub struct MangoGroup {
     pub indexes: [MangoIndex; NUM_TOKENS],  // to keep track of interest
     pub spot_markets: [Pubkey; NUM_MARKETS],  // pubkeys to MarketState of serum dex
     pub signer_nonce: u64,
+    pub signer_key: Pubkey
 }
 impl_loadable!(MangoGroup);
 
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct MangoIndex {
-    last_update: u64,
-    borrow: u64,
-    lend: u64
+    pub last_update: u64,
+    pub borrow: u64,
+    pub lend: u64
 }
 unsafe impl Zeroable for MangoIndex {}
 unsafe impl Pod for MangoIndex {}
