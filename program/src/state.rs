@@ -55,7 +55,8 @@ pub struct MangoGroup {
     pub indexes: [MangoIndex; NUM_TOKENS],  // to keep track of interest
     pub spot_markets: [Pubkey; NUM_MARKETS],  // pubkeys to MarketState of serum dex
     pub signer_nonce: u64,
-    pub signer_key: Pubkey
+    pub signer_key: Pubkey,
+    pub dex_program_id: Pubkey,  // serum dex program id
 }
 impl_loadable!(MangoGroup);
 
@@ -74,6 +75,7 @@ unsafe impl Pod for MangoIndex {}
 #[repr(C)]
 pub struct MarginAccount {
     pub account_flags: u64,
+    pub mango_group: Pubkey,
     pub owner: Pubkey,  // solana pubkey of owner
 
     // assets and borrows are denominated in Mango adjusted terms

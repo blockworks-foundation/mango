@@ -11,7 +11,7 @@ use crate::state::{NUM_TOKENS, NUM_MARKETS};
 pub enum MangoInstruction {
     /// Initialize a group of lending pools that can be cross margined
     ///
-    /// Accounts expected by this instruction:
+    /// Accounts expected by this instruction (5 + 2 * NUM_TOKENS + NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - the data account to store mango group state vars
     /// 1. `[]` rent_acc - Rent sysvar account
@@ -27,12 +27,19 @@ pub enum MangoInstruction {
     ///
     /// 5+2*NUM_TOKENS..5+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
-    ///
-    /// Total number of accounts = 5 + 2 * NUM_TOKENS + NUM_MARKETS
     InitMangoGroup {
         signer_nonce: u64
     },
 
+    /// Initialize a margin account for a user
+    ///
+    /// Accounts expected by this instruction (4 + NUM_MARKETS):
+    ///
+    /// 0. `[]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account data
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[]` rent_acc - Rent sysvar account
+    /// 4..4+NUM_MARKETS `[]` open_orders_accs - uninitialized serum dex open orders accounts
     InitMarginAccount,
 
     Deposit,
@@ -60,6 +67,9 @@ impl MangoInstruction {
                     signer_nonce: u64::from_le_bytes(*signer_nonce)
                 }
             }
+            1 => {
+                MangoInstruction::InitMarginAccount
+            }
             _ => { return None; }
         })
     }
@@ -79,7 +89,6 @@ pub fn init_mango_group(
     spot_market_pks: &[Pubkey; NUM_MARKETS],
     signer_nonce: u64,
 ) -> Result<Instruction, ProgramError> {
-    let instr = MangoInstruction::InitMangoGroup { signer_nonce };
     let mut accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
@@ -91,6 +100,31 @@ pub fn init_mango_group(
     accounts.extend(vault_pks.iter().map(|pk| AccountMeta::new(*pk, false)));
     accounts.extend(spot_market_pks.iter().map(|pk| AccountMeta::new_readonly(*pk, false)));
 
+    let instr = MangoInstruction::InitMangoGroup { signer_nonce };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn init_margin_account(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    open_orders_pks: &[Pubkey; NUM_MARKETS]
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new_readonly(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
+    ];
+    accounts.extend(open_orders_pks.iter().map(|pk| AccountMeta::new_readonly(*pk, false)));
+
+    let instr = MangoInstruction::InitMarginAccount;
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,

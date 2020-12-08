@@ -11,10 +11,12 @@ use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, Loadable, MangoGroup, NUM_MARKETS, NUM_TOKENS, MangoIndex};
+use crate::state::{AccountFlag, Loadable, MangoGroup, NUM_MARKETS, NUM_TOKENS, MangoIndex, MarginAccount};
 use crate::utils::gen_signer_key;
-use serum_dex::state::ToAlignedBytes;
+use serum_dex::state::{ToAlignedBytes};
 use solana_program::clock::Clock;
+use std::cell::Ref;
+use bytemuck::from_bytes;
 
 pub struct Processor {}
 
@@ -52,6 +54,7 @@ impl Processor {
         assert_eq!(gen_signer_key(signer_nonce, mango_group_acc.key, program_id)?, *signer_acc.key);
         mango_group.signer_nonce = signer_nonce;
         mango_group.signer_key = *signer_acc.key;
+        mango_group.dex_program_id = *dex_prog_acc.key;
 
         let quote_mint_acc = &token_mint_accs[NUM_MARKETS];
         let quote_vault_acc = &vault_accs[NUM_MARKETS];
@@ -91,6 +94,54 @@ impl Processor {
         Ok(())
     }
 
+    fn init_margin_account(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo]
+    ) -> ProgramResult {
+        const NUM_FIXED: usize = 4;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + NUM_MARKETS];
+        let (fixed_accs, open_orders_accs) = array_refs![accounts, NUM_FIXED, NUM_MARKETS];
+
+        let [
+            mango_group_acc,
+            margin_account_acc,
+            owner_acc,
+            rent_acc
+        ] = fixed_accs;
+
+        let mango_group = MangoGroup::load(mango_group_acc)?;
+        let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
+        let rent = Rent::from_account_info(rent_acc)?;
+
+        assert_eq!(margin_account_acc.owner, program_id);
+        assert!(rent.is_exempt(margin_account_acc.lamports(), size_of::<MarginAccount>()));
+        assert_eq!(margin_account.account_flags, 0);
+        assert!(owner_acc.is_signer);
+
+        margin_account.account_flags = (AccountFlag::Initialized | AccountFlag::MarginAccount).bits();
+        margin_account.mango_group = *mango_group_acc.key;
+        margin_account.owner = *owner_acc.key;
+
+        for i in 0..NUM_MARKETS {
+            let open_orders_acc = &open_orders_accs[i];
+            let open_orders = load_open_orders(open_orders_acc)?;
+
+            assert!(rent.is_exempt(open_orders_acc.lamports(), size_of::<serum_dex::state::OpenOrders>()));
+            let open_orders_flags = open_orders.account_flags;
+            assert_eq!(open_orders_flags, 0);
+            assert_eq!(open_orders_acc.owner, &mango_group.dex_program_id);
+
+            margin_account.open_orders[i] = *open_orders_acc.key;
+        }
+
+        // TODO is this necessary?
+        margin_account.assets = [0; NUM_TOKENS];
+        margin_account.borrows = [0; NUM_TOKENS];
+        margin_account.positions = [0; NUM_TOKENS];
+
+        Ok(())
+    }
+
     pub fn process(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -103,7 +154,9 @@ impl Processor {
             } => {
                 Self::init_mango_group(program_id, accounts, signer_nonce)?;
             }
-            MangoInstruction::InitMarginAccount => {}
+            MangoInstruction::InitMarginAccount => {
+                Self::init_margin_account(program_id, accounts)?;
+            }
             MangoInstruction::Deposit => {}
             MangoInstruction::Withdraw => {}
             MangoInstruction::Liquidate => {}
@@ -115,6 +168,23 @@ impl Processor {
         Ok(())
     }
 }
+
+
+fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, [u8]>, ProgramError> {
+    assert!(acc.data_len() >= 12);
+    let unpadded_data: Ref<[u8]> = Ref::map(acc.try_borrow_data()?, |data| {
+        let data_len = data.len() - 12;
+        let (_, rest) = data.split_at(5);
+        let (mid, _) = rest.split_at(data_len);
+        mid
+    });
+    Ok(unpadded_data)
+}
+
+fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
+    Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
+}
+
 
 /*
 TODO
