@@ -224,6 +224,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fixed"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f32ca1abdbb21d63a3e02a658a9e3001b172f13c8b46724299e21190c5ee5041"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -317,6 +326,7 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "enumflags2 0.7.0-preview1",
+ "fixed",
  "num_enum",
  "safe-transmute",
  "serde",
@@ -566,7 +576,7 @@ dependencies = [
 [[package]]
 name = "serum_dex"
 version = "0.2.0"
-source = "git+https://github.com/project-serum/serum-dex.git#baf5fca5efe0f3ef4ca107d10a2c78b209789107"
+source = "git+https://github.com/project-serum/serum-dex.git#855790b722dc600264704446fb552a4a334f9ade"
 dependencies = [
  "arrayref",
  "bincode",
@@ -713,9 +723,9 @@ checksum = "343f3f510c2915908f155e94f17220b19ccfacf2a64a2a5d8004f2c3e311e7fd"
 
 [[package]]
 name = "syn"
-version = "1.0.53"
+version = "1.0.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8833e20724c24de12bbaba5ad230ea61c3eafb05b881c7c9d3cfe8638b187e68"
+checksum = "9a2af957a63d6bd42255c359c93d9bfdb97076bd3b820897ce55ffbfbf107f44"
 dependencies = [
  "proc-macro2",
  "quote",

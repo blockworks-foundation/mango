@@ -42,7 +42,9 @@ pub enum MangoInstruction {
     /// 4..4+NUM_MARKETS `[]` open_orders_accs - uninitialized serum dex open orders accounts
     InitMarginAccount,
 
-    Deposit,
+    Deposit {
+        quantity: u64
+    },
 
     Withdraw,
 
@@ -96,9 +98,15 @@ pub fn init_mango_group(
         AccountMeta::new_readonly(*signer_pk, false),
         AccountMeta::new_readonly(*dex_prog_id, false)
     ];
-    accounts.extend(mint_pks.iter().map(|pk| AccountMeta::new_readonly(*pk, false)));
-    accounts.extend(vault_pks.iter().map(|pk| AccountMeta::new(*pk, false)));
-    accounts.extend(spot_market_pks.iter().map(|pk| AccountMeta::new_readonly(*pk, false)));
+    accounts.extend(mint_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(vault_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(spot_market_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
 
     let instr = MangoInstruction::InitMangoGroup { signer_nonce };
     let data = instr.pack();
@@ -122,7 +130,9 @@ pub fn init_margin_account(
         AccountMeta::new_readonly(*owner_pk, true),
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
     ];
-    accounts.extend(open_orders_pks.iter().map(|pk| AccountMeta::new_readonly(*pk, false)));
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
 
     let instr = MangoInstruction::InitMarginAccount;
     let data = instr.pack();

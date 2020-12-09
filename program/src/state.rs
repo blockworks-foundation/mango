@@ -6,10 +6,16 @@ use solana_program::program_error::ProgramError;
 use bytemuck::{from_bytes, from_bytes_mut, Pod, Zeroable};
 use solana_program::pubkey::Pubkey;
 use enumflags2::BitFlags;
+use fixed::types::U64F64;
+
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
+pub const MINUTE: u64 = 60;
+pub const HOUR: u64 = 3600;
+pub const DAY: u64 = 86400;
+pub const YEAR: u64 = 31536000;
 
 
 pub trait Loadable: Pod {
@@ -43,6 +49,16 @@ pub enum AccountFlag {
 }
 
 
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct MangoIndex {
+    pub last_update: u64,
+    pub borrow: U64F64,
+    pub deposit: U64F64
+}
+unsafe impl Zeroable for MangoIndex {}
+unsafe impl Pod for MangoIndex {}
+
 /// A group of spot markets that can be cross margined together
 /// TODO need plans to migrate smart contract
 /// TODO add in fees for devs and UI hosters
@@ -57,18 +73,28 @@ pub struct MangoGroup {
     pub signer_nonce: u64,
     pub signer_key: Pubkey,
     pub dex_program_id: Pubkey,  // serum dex program id
+
+    // denominated in Mango index adjusted terms
+    pub total_deposits: [U64F64; NUM_TOKENS],
+    pub total_borrows: [U64F64; NUM_TOKENS]
 }
 impl_loadable!(MangoGroup);
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct MangoIndex {
-    pub last_update: u64,
-    pub borrow: u64,
-    pub lend: u64
+impl MangoGroup {
+    pub fn get_token_index(&self, mint_pk: &Pubkey) -> Option<usize> {
+        self.tokens.iter().position(|token| token == mint_pk)
+    }
+
+    pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
+        if self.total_borrows[token_index] == 0 {
+            U64F64::from_num(0)
+        } else {
+            U64F64::from_num(0.01) / U64F64::from_num(YEAR)  // 1% interest per year
+        }
+    }
 }
-unsafe impl Zeroable for MangoIndex {}
-unsafe impl Pod for MangoIndex {}
+
+
 
 // Track the issuances of bonds by this user
 #[derive(Copy, Clone)]
@@ -79,10 +105,10 @@ pub struct MarginAccount {
     pub owner: Pubkey,  // solana pubkey of owner
 
     // assets and borrows are denominated in Mango adjusted terms
-    pub assets: [u64; NUM_TOKENS],  // assets being lent out and gaining interest, including collateral
+    pub deposits: [U64F64; NUM_TOKENS],  // assets being lent out and gaining interest, including collateral
 
     // this will be incremented every time an order is opened and decremented when order is closed
-    pub borrows: [u64; NUM_TOKENS],  // multiply by current index to get actual value
+    pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
     pub positions: [u64; NUM_TOKENS],  // the positions held by the user
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
