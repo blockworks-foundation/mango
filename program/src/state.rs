@@ -216,6 +216,7 @@ unsafe impl Pod for OrderBookStateHeader {}
 
 
 #[inline]
+#[allow(dead_code)]
 fn remove_slop<T: Pod>(bytes: &[u8]) -> &[T] {
     let slop = bytes.len() % size_of::<T>();
     let new_len = bytes.len() - slop;
@@ -224,14 +225,14 @@ fn remove_slop<T: Pod>(bytes: &[u8]) -> &[T] {
 
 
 #[inline]
-#[allow(unused)]
+#[allow(dead_code)]
 fn remove_slop_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
     let slop = bytes.len() % size_of::<T>();
     let new_len = bytes.len() - slop;
     cast_slice_mut(&mut bytes[..new_len])
 }
 
-
+#[allow(dead_code)]
 fn strip_header<'a, H: Pod, D: Pod>(
     account: &'a AccountInfo
 ) -> Result<(Ref<'a, H>, Ref<'a, [D]>), ProgramError> {
@@ -253,6 +254,7 @@ fn strip_header<'a, H: Pod, D: Pod>(
     Ok((header, inner))
 }
 
+#[allow(dead_code)]
 fn strip_header_mut<'a, H: Pod, D: Pod>(
     account: &'a AccountInfo
 ) -> Result<(RefMut<'a, H>, RefMut<'a, [D]>), ProgramError> {

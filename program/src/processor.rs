@@ -1,4 +1,3 @@
-use std::cell::{Ref, RefMut};
 use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
@@ -15,9 +14,9 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
-use crate::state::{AccountFlag, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, load_bids_mut, load_asks_mut, load_open_orders};
-use crate::utils::{gen_signer_key, get_dex_best_price, gen_signer_seeds};
 use crate::instruction::MangoInstruction;
+use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
+use crate::utils::{gen_signer_key, gen_signer_seeds, get_dex_best_price};
 
 pub struct Processor {}
 
@@ -207,7 +206,7 @@ impl Processor {
     }
 
     fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> ProgramResult {
-        const NUM_FIXED: usize = 8;
+        const NUM_FIXED: usize = 9;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS];
         let (
             fixed_accs,
@@ -224,6 +223,7 @@ impl Processor {
             mint_acc,
             token_account_acc,
             vault_acc,
+            signer_acc,
             token_prog_acc,
             clock_acc,
         ] = fixed_accs;
@@ -234,7 +234,7 @@ impl Processor {
         assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
         assert_eq!(mango_group_acc.owner, program_id);
 
-        let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
+        let margin_account = MarginAccount::load_mut(margin_account_acc)?;
         assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
         assert_eq!(&margin_account.owner, owner_acc.key);
         assert_eq!(&margin_account.mango_group, mango_group_acc.key);
@@ -250,23 +250,22 @@ impl Processor {
         let val_withdraw = prices[token_index] * U64F64::from_num(quantity);
         assert!(free_equity >= val_withdraw);
 
-        // let withdraw_instruction = spl_token::instruction::transfer(
-        //     token_prog_acc.key,
-        //     vault_acc.key,
-        //     token_account_acc.key,
-        //     ,
-        //     &[],
-        //     quantity
-        // )?;
-        // let withdraw_accs = [
-        //     vault_acc.clone(),
-        //     user_quote_acc.clone(),
-        //     omega_signer_acc.clone(),
-        //     spl_token_program_acc.clone()
-        // ];
-        // let signer_seeds = gen_signer_seeds(&omega_contract.signer_nonce, omega_contract_acc.key);
-        // solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
-
+        let withdraw_instruction = spl_token::instruction::transfer(
+            token_prog_acc.key,
+            vault_acc.key,
+            token_account_acc.key,
+            signer_acc.key,
+            &[],
+            quantity
+        )?;
+        let withdraw_accs = [
+            vault_acc.clone(),
+            token_account_acc.clone(),
+            signer_acc.clone(),
+            token_prog_acc.clone()
+        ];
+        let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+        solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
 
         Ok(())
     }
