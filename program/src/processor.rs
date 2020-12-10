@@ -16,7 +16,7 @@ use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
 use crate::state::{AccountFlag, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, load_bids_mut, load_asks_mut, load_open_orders};
-use crate::utils::{gen_signer_key, get_dex_best_price};
+use crate::utils::{gen_signer_key, get_dex_best_price, gen_signer_seeds};
 use crate::instruction::MangoInstruction;
 
 pub struct Processor {}
@@ -250,6 +250,22 @@ impl Processor {
         let val_withdraw = prices[token_index] * U64F64::from_num(quantity);
         assert!(free_equity >= val_withdraw);
 
+        // let withdraw_instruction = spl_token::instruction::transfer(
+        //     token_prog_acc.key,
+        //     vault_acc.key,
+        //     token_account_acc.key,
+        //     ,
+        //     &[],
+        //     quantity
+        // )?;
+        // let withdraw_accs = [
+        //     vault_acc.clone(),
+        //     user_quote_acc.clone(),
+        //     omega_signer_acc.clone(),
+        //     spl_token_program_acc.clone()
+        // ];
+        // let signer_seeds = gen_signer_seeds(&omega_contract.signer_nonce, omega_contract_acc.key);
+        // solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
 
 
         Ok(())
