@@ -1,12 +1,13 @@
-use std::cell::Ref;
+use std::cell::{Ref, RefMut};
 use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
-use bytemuck::from_bytes;
+use fixed::types::U64F64;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
+use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack};
 use solana_program::pubkey::Pubkey;
@@ -14,11 +15,9 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
+use crate::state::{AccountFlag, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, load_bids_mut, load_asks_mut, load_open_orders};
+use crate::utils::{gen_signer_key, get_dex_best_price};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
-use crate::utils::gen_signer_key;
-use fixed::types::U64F64;
-
 
 pub struct Processor {}
 
@@ -168,22 +167,22 @@ impl Processor {
             clock_acc,
         ] = accounts;
         assert!(owner_acc.is_signer);
-        let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
-        let clock = Clock::from_account_info(clock_acc)?;
 
+        // TODO move this into load_mut_checked function
+        let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
         assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
         assert_eq!(mango_group_acc.owner, program_id);
 
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
+        assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
+        assert_eq!(&margin_account.owner, owner_acc.key);
+        assert_eq!(&margin_account.mango_group, mango_group_acc.key);
+
         let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
-
-        let index: MangoIndex = mango_group.indexes[token_index];
-        let native_deposits: U64F64 = mango_group.total_deposits[token_index] * index.deposit;
-        let native_borrows: U64F64 = mango_group.total_borrows[token_index] * index.borrow;
-        let interest_rate = mango_group.get_interest_rate(token_index) ;
-        mango_group.indexes[token_index] = Self::update_index(index, clock, interest_rate, native_deposits, native_borrows);
-
         assert_eq!(&mango_group.vaults[token_index], vault_acc.key);
+
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
 
         let deposit_instruction = spl_token::instruction::transfer(
             &spl_token::id(),
@@ -200,42 +199,94 @@ impl Processor {
 
         solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
 
-        margin_account.deposits[token_index] += U64F64::from_num(quantity) / mango_group.indexes[token_index].deposit;
+        let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[token_index].deposit;
+        margin_account.deposits[token_index] += deposit;
+        mango_group.total_deposits[token_index] += deposit;
 
         Ok(())
     }
 
-    /// interest is in units per second (e.g. 0.01 => 1% interest per second)
-    fn update_index(
-        index: MangoIndex,
-        clock: Clock,
-        interest_rate: U64F64,
-        native_deposits: U64F64,
-        native_borrows: U64F64
-    ) -> MangoIndex {
+    fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> ProgramResult {
+        const NUM_FIXED: usize = 8;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            spot_market_accs,
+            bids_accs,
+            asks_accs
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS];
 
-        // TODO do checked operations
-        let curr_ts = clock.unix_timestamp as u64;
-        if curr_ts == index.last_update {
-            return index;
+        let [
+            mango_group_acc,
+            margin_account_acc,
+            owner_acc,
+            mint_acc,
+            token_account_acc,
+            vault_acc,
+            token_prog_acc,
+            clock_acc,
+        ] = fixed_accs;
+        assert!(owner_acc.is_signer);
+
+        // TODO move this into load_mut_checked function
+        let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
+        assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
+        assert_eq!(mango_group_acc.owner, program_id);
+
+        let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
+        assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
+        assert_eq!(&margin_account.owner, owner_acc.key);
+        assert_eq!(&margin_account.mango_group, mango_group_acc.key);
+
+        let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
+        assert_eq!(&mango_group.vaults[token_index], vault_acc.key);
+
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
+        let free_equity = margin_account.get_free_equity(&mango_group, &prices, open_orders_accs)?;
+        let val_withdraw = prices[token_index] * U64F64::from_num(quantity);
+        assert!(free_equity >= val_withdraw);
+
+
+
+        Ok(())
+    }
+
+    fn get_prices(
+        mango_group: &MangoGroup,
+        spot_market_accs: &[AccountInfo],
+        bids_accs: &[AccountInfo],
+        asks_accs: &[AccountInfo]
+    ) -> Result<[U64F64; NUM_TOKENS], ProgramError> {
+        // Determine prices from serum dex (TODO in the future use oracle)
+        let mut prices = [U64F64::from_num(0); NUM_TOKENS];
+        prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
+
+
+        for i in 0..NUM_MARKETS {
+            let spot_market_acc = &spot_market_accs[i];
+            assert_eq!(&mango_group.spot_markets[i], spot_market_acc.key);
+            let spot_market = serum_dex::state::MarketState::load(
+                spot_market_acc, &mango_group.dex_program_id
+            )?;
+            let bids = load_bids_mut(&spot_market, &bids_accs[i])?;
+            let asks = load_asks_mut(&spot_market, &asks_accs[i])?;
+
+            let bid_price = get_dex_best_price(bids, true);
+            let ask_price = get_dex_best_price(asks, false);
+
+            let lot_size_adj = U64F64::from_num(spot_market.pc_lot_size) / U64F64::from_num(spot_market.coin_lot_size);
+            prices[i] = match (bid_price, ask_price) {  // TODO better error
+                (None, None) => { panic!("No orders on the book!") },
+                (Some(b), None) => U64F64::from_num(b) * lot_size_adj,
+                (None, Some(a)) => U64F64::from_num(a) * lot_size_adj,
+                (Some(b), Some(a)) => lot_size_adj * U64F64::from_num(b + a) / 2  // TODO checked add
+            };
         }
-
-        assert!(native_deposits > 0);
-        assert!(native_borrows <= native_deposits);
-
-        let utilization: U64F64 = native_borrows / native_deposits;
-
-
-        let borrow_interest = interest_rate * U64F64::from_num(curr_ts - index.last_update);
-
-        let fee_adj = U64F64::from_num(19) / U64F64::from_num(20);
-        let deposit_interest = interest_rate * fee_adj * utilization;
-
-        MangoIndex {
-            last_update: curr_ts,
-            borrow:  index.borrow + borrow_interest * index.borrow,
-            deposit: index.deposit + deposit_interest * index.deposit
-        }
+        Ok(prices)
     }
 
     pub fn process(
@@ -248,17 +299,25 @@ impl Processor {
             MangoInstruction::InitMangoGroup {
                 signer_nonce
             } => {
+                msg!("InitMangoGroup");
                 Self::init_mango_group(program_id, accounts, signer_nonce)?;
             }
             MangoInstruction::InitMarginAccount => {
+                msg!("InitMarginAccount");
                 Self::init_margin_account(program_id, accounts)?;
             }
             MangoInstruction::Deposit {
                 quantity
             } => {
+                msg!("Deposit");
                 Self::deposit(program_id, accounts, quantity)?;
             }
-            MangoInstruction::Withdraw => {}
+            MangoInstruction::Withdraw {
+                quantity
+            } => {
+                msg!("Withdraw");
+                Self::withdraw(program_id, accounts, quantity)?;
+            }
             MangoInstruction::Liquidate => {}
             MangoInstruction::PlaceOrder => {}
             MangoInstruction::SettleFunds => {}
@@ -267,36 +326,21 @@ impl Processor {
         }
         Ok(())
     }
+
 }
 
 
-fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, [u8]>, ProgramError> {
-    assert!(acc.data_len() >= 12);
-    let unpadded_data: Ref<[u8]> = Ref::map(acc.try_borrow_data()?, |data| {
-        let data_len = data.len() - 12;
-        let (_, rest) = data.split_at(5);
-        let (mid, _) = rest.split_at(data_len);
-        mid
-    });
-    Ok(unpadded_data)
-}
-
-
-
-fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
-    Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
-}
 
 
 /*
 TODO
 Initial launch
 - UI
-- funding book
 - provide liquidity
 - liquidation bot
 - cranks
 - testing
+- oracle program + bot
  */
 
 /*

@@ -46,7 +46,9 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    Withdraw,
+    Withdraw {
+        quantity: u64
+    },
 
     Liquidate,
 
@@ -71,6 +73,14 @@ impl MangoInstruction {
             }
             1 => {
                 MangoInstruction::InitMarginAccount
+            },
+            2 => {
+                let quantity = array_ref![data, 0, 8];
+                MangoInstruction::Deposit { quantity: u64::from_le_bytes(*quantity) }
+            },
+            3 => {
+                let quantity = array_ref![data, 0, 8];
+                MangoInstruction::Withdraw { quantity: u64::from_le_bytes(*quantity) }
             }
             _ => { return None; }
         })

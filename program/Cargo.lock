@@ -154,16 +154,7 @@ version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83c8d82922337cd23a15f88b70d8e4ef5f11da38dd7cdb55e84dd5de99695da0"
 dependencies = [
- "enumflags2_derive 0.6.4",
-]
-
-[[package]]
-name = "enumflags2"
-version = "0.7.0-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77412c73a0e3e019fb4ab1f1c74d0946a4b6099bb64b527782fc6cb2ae848c3a"
-dependencies = [
- "enumflags2_derive 0.7.0-preview1",
+ "enumflags2_derive",
 ]
 
 [[package]]
@@ -171,17 +162,6 @@ name = "enumflags2_derive"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "946ee94e3dbf58fdd324f9ce245c7b238d46a66f00e86a020b71996349e46cce"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "enumflags2_derive"
-version = "0.7.0-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ed5f7f23e9c3e38bbadae757d69d2b91cdc1234f126e6215877300499e0a125"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -325,7 +305,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "byteorder",
- "enumflags2 0.7.0-preview1",
+ "enumflags2",
  "fixed",
  "num_enum",
  "safe-transmute",
@@ -582,7 +562,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "byteorder",
- "enumflags2 0.6.4",
+ "enumflags2",
  "field-offset",
  "itertools",
  "num-traits",
