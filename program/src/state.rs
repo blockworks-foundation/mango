@@ -194,7 +194,7 @@ impl MarginAccount {
             msg!("This account should be liquidated!");
             Ok(U64F64::from_num(0))
         } else {
-            let locked_equity = liabs / MAX_LEVERAGE;
+            let locked_equity = liabs / U64F64::from_num(MAX_LEVERAGE);
             let equity = assets - liabs;
             if equity < locked_equity {
                 Ok(U64F64::from_num(0))
