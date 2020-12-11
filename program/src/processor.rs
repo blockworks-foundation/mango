@@ -234,10 +234,15 @@ impl Processor {
         assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
         assert_eq!(mango_group_acc.owner, program_id);
 
-        let margin_account = MarginAccount::load_mut(margin_account_acc)?;
+        let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
         assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
         assert_eq!(&margin_account.owner, owner_acc.key);
         assert_eq!(&margin_account.mango_group, mango_group_acc.key);
+
+        for i in 0..NUM_MARKETS {
+            // TODO verify the open orders are initialized
+            assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i]);
+        }
 
         let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
         assert_eq!(&mango_group.vaults[token_index], vault_acc.key);
@@ -245,13 +250,17 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
+        let index: &MangoIndex = &mango_group.indexes[token_index];
+        let available: u64 = (margin_account.deposits[token_index] * index.deposit).to_num();
+        assert!(available >= quantity);  // TODO just borrow (quantity - available)
+
         let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
         let free_equity = margin_account.get_free_equity(&mango_group, &prices, open_orders_accs)?;
         let val_withdraw = prices[token_index] * U64F64::from_num(quantity);
         assert!(free_equity >= val_withdraw);
 
         let withdraw_instruction = spl_token::instruction::transfer(
-            token_prog_acc.key,
+            &spl_token::ID,
             vault_acc.key,
             token_account_acc.key,
             signer_acc.key,
@@ -266,6 +275,10 @@ impl Processor {
         ];
         let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
         solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
+
+        let withdrew: U64F64 = U64F64::from_num(quantity) / index.deposit;
+        margin_account.deposits[token_index] -= withdrew;
+        mango_group.total_deposits[token_index] -= withdrew;
 
         Ok(())
     }

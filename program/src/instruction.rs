@@ -42,10 +42,42 @@ pub enum MangoInstruction {
     /// 4..4+NUM_MARKETS `[]` open_orders_accs - uninitialized serum dex open orders accounts
     InitMarginAccount,
 
+    /// Deposit funds into margin account to be used as collateral and earn interest.
+    ///
+    /// Accounts expected by this instruction (8):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[]` mint_acc - Mint of the token being deposited
+    /// 4. `[writable]` token_account_acc - TokenAccount owned by user which will be sending the funds
+    /// 5. `[writable]` vault_acc - TokenAccount owned by MangoGroup
+    /// 6. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 7. `[]` clock_acc - Clock sysvar account
     Deposit {
         quantity: u64
     },
 
+    /// Withdraw funds that were deposited earlier.
+    ///
+    /// Accounts expected by this instruction (9 + 4 * NUM_MARKETS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[]` mint_acc - Mint of the token being withdrawn
+    /// 4. `[writable]` token_account_acc - TokenAccount owned by user which will be receiving the funds
+    /// 5. `[writable]` vault_acc - TokenAccount owned by MangoGroup which will be sending
+    /// 6. `[]` signer_acc - acc pointed to by signer_key
+    /// 7. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 8. `[]` clock_acc - Clock sysvar account
+    /// 9..9+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
+    /// 9+NUM_MARKETS..9+2*NUM_MARKETS `[]`
+    ///     spot_market_accs - MarketState accounts for serum dex
+    /// 9+2*NUM_MARKETS..9+3*NUM_MARKETS `[]`
+    ///     bids_accs - The bids for each of the spot markets
+    /// 9+3*NUM_MARKETS..9+4*NUM_MARKETS `[]`
+    ///     asks_accs - The asks for each of the spot markets
     Withdraw {
         quantity: u64
     },
@@ -145,6 +177,83 @@ pub fn init_margin_account(
     );
 
     let instr = MangoInstruction::InitMarginAccount;
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn deposit(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    mint_pk: &Pubkey,
+    token_account_pk: &Pubkey,
+    vault_pk: &Pubkey,
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(*mint_pk, false),
+        AccountMeta::new(*token_account_pk, false),
+        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    let instr = MangoInstruction::Deposit { quantity };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn withdraw(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    mint_pk: &Pubkey,
+    token_account_pk: &Pubkey,
+    vault_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    open_orders_pks: &[Pubkey; NUM_MARKETS],
+    spot_market_pks: &[Pubkey; NUM_MARKETS],
+    bids_pks: &[Pubkey; NUM_MARKETS],
+    asks_pks: &[Pubkey; NUM_MARKETS],
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(*mint_pk, false),
+        AccountMeta::new(*token_account_pk, false),
+        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(spot_market_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(bids_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(asks_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+
+    let instr = MangoInstruction::Withdraw { quantity };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
