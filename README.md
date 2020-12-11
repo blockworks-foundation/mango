@@ -35,7 +35,19 @@ git checkout v1.4.13
 cargo install spl-token-cli
 ```
 
-3. Build the on-chain program and deploy it to the devnet
+3. Build serum dex and deploy it to the devnet
+
+```
+git clone https://github.com/project-serum/serum-dex
+cd serum-dex
+git checkout 49628a3f24a7256a1682c279192a8f535efd2d64
+./do.sh build dex
+DEX_PROGRAM_ID=$(solana deploy dex/target/bpfel-unknown-unknown/release/serum_dex.so | jq .programId -r)
+cd crank
+cargo run -- $CLUSTER whole-shebang $KEYPAIR $DEX_PROGRAM_ID
+```
+
+3. Build the mango on-chain program and deploy it to the devnet
 
 ```
 pushd program
@@ -59,10 +71,9 @@ BASE1_MINT=$(spl-token create-token  | head -n 1 | cut -d' ' -f3)
 BASE1_WALLET=$(spl-token create-account $BASE1_MINT | head -n 1 | cut -d' ' -f3)
 spl-token mint $BASE1_MINT 1000000 $BASE1_WALLET
 
-pushd ~/src/serum-dex
-DEX_PROGRAM_ID=32KH1R8gb1nxVCB5uRScg9hXWEhSf15vt7CipxbgoubK
-cargo run --bin serum $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $BASE0_MINT --pc-mint $QUOTE_MINT
-cargo run --bin serum $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $BASE1_MINT --pc-mint $QUOTE_MINT
+pushd ~/src/serum-dex/crank
+cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $BASE0_MINT --pc-mint $QUOTE_MINT
+cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $BASE1_MINT --pc-mint $QUOTE_MINT
 popd
 
 ```
