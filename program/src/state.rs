@@ -105,26 +105,25 @@ impl MangoGroup {
         let fee_adj = U64F64::from_num(19) / U64F64::from_num(20);
 
         for i in 0..NUM_TOKENS {
+
             let interest_rate = self.get_interest_rate(i);
-
             let index: &mut MangoIndex = &mut self.indexes[i];
-
-            if index.last_update == curr_ts {
+            if index.last_update == curr_ts || self.total_deposits[i] == 0 {
                 continue;
             }
 
             let native_deposits = self.total_deposits[i] * index.deposit;
             let native_borrows = self.total_borrows[i] * index.borrow;
-
-            assert!(native_deposits > 0);
             assert!(native_borrows <= native_deposits);
 
             let utilization: U64F64 = native_borrows / native_deposits;
             let borrow_interest = interest_rate * U64F64::from_num(curr_ts - index.last_update);
             let deposit_interest = interest_rate * fee_adj * utilization;
+
             index.last_update = curr_ts;
             index.borrow += index.borrow * borrow_interest;
             index.deposit += index.deposit * deposit_interest;
+
         }
         Ok(())
     }

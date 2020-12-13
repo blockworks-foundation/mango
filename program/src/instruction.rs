@@ -201,6 +201,7 @@ pub fn deposit(
         AccountMeta::new_readonly(*mint_pk, false),
         AccountMeta::new(*token_account_pk, false),
         AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
     ];
 

@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::Clap;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::pubkey::{Pubkey};
 use common::{convert_assertion_error, read_keypair_file, create_account_rent_exempt,
              create_signer_key_and_nonce, create_token_account, send_instructions, Cluster};
 use std::mem::size_of;
@@ -15,8 +15,6 @@ use serde_json::{Value, json};
 use std::fs::File;
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_sdk::program_pack::Pack;
-use solana_client::rpc_response::RpcKeyedAccount;
-use solana_sdk::account::Account;
 
 
 #[derive(Clap, Debug)]
@@ -211,7 +209,8 @@ pub fn start(opts: Opts) -> Result<()> {
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
 
-            println!("MarginAccount created: {}", margin_account_pk.to_string());
+            println!("MarginAccount created");
+            println!("{}", margin_account_pk.to_string());
         }
         Command::Deposit {
             payer,
@@ -242,7 +241,6 @@ pub fn start(opts: Opts) -> Result<()> {
             // Take first token account
             let rka = &token_accounts[0];
             let token_account_pk = Pubkey::from_str(rka.pubkey.as_str())?;
-            let acc = client.get_account(&token_account_pk)?;
 
             let mint_acc = client.get_account(&mint_pk)?;
             let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
