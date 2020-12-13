@@ -42,7 +42,7 @@ git clone https://github.com/project-serum/serum-dex
 cd serum-dex
 git checkout 49628a3f24a7256a1682c279192a8f535efd2d64
 ./do.sh build dex
-DEX_PROGRAM_ID=$(solana deploy dex/target/bpfel-unknown-unknown/release/serum_dex.so | jq .programId -r)
+DEX_PROGRAM_ID=$(solana deploy dex/target/bpfel-unknown-unknown/release/serum_dex.so --use-deprecated-loader | jq .programId -r)
 cd crank
 cargo run -- $CLUSTER whole-shebang $KEYPAIR $DEX_PROGRAM_ID
 ```
