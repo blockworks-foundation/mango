@@ -49,15 +49,7 @@ impl FromStr for Cluster {
 
 impl std::fmt::Display for Cluster {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let clust_str = match self {
-            Cluster::Testnet => "testnet",
-            Cluster::Mainnet => "mainnet",
-            Cluster::VipMainnet => "vipmainnet",
-            Cluster::Devnet => "devnet",
-            Cluster::Localnet => "localnet",
-            Cluster::Debug => "debut",
-        };
-        write!(f, "{}", clust_str)
+        write!(f, "{}", self.name())
     }
 }
 
@@ -71,6 +63,17 @@ impl Cluster {
             Cluster::Localnet => "http://127.0.0.1:8899",
             Cluster::Debug => "http://34.90.18.145:8899",
         }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            Cluster::Devnet => "devnet",
+            Cluster::Testnet => "testnet",
+            Cluster::Mainnet => "mainnet",
+            Cluster::VipMainnet => "vipmainnet",
+            Cluster::Localnet => "localnet",
+            Cluster::Debug => "debug",
+        }
+
     }
 }
 
@@ -381,10 +384,10 @@ pub fn send_instructions(
         recent_hash,
     );
 
-    let result = simulate_transaction(&client, &txn, true, CommitmentConfig::single_gossip())?;
-    if let Some(e) = result.value.err {
-        return Err(format_err!("simulate_transaction error: {:?}", e));
-    }
+    // let result = simulate_transaction(&client, &txn, true, CommitmentConfig::single_gossip())?;
+    // if let Some(e) = result.value.err {
+    //     return Err(format_err!("simulate_transaction error: {:?}", e));
+    // }
     send_txn(&client, &txn, false)?;
     Ok(())
 }

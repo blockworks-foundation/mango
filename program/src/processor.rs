@@ -15,7 +15,7 @@ use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
+use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, load_market_state};
 use crate::utils::{gen_signer_key, gen_signer_seeds, get_dex_best_price};
 
 pub struct Processor {}
@@ -28,10 +28,11 @@ impl Processor {
         signer_nonce: u64
     ) -> ProgramResult {
         const NUM_FIXED: usize = 5;
-
+        msg!("here0");
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_TOKENS + NUM_MARKETS];
         let (fixed_accs, token_mint_accs, vault_accs, spot_market_accs) =
             array_refs![accounts, NUM_FIXED, NUM_TOKENS, NUM_TOKENS, NUM_MARKETS];
+        msg!("here0");
 
         let [
             mango_group_acc,
@@ -69,10 +70,10 @@ impl Processor {
         let curr_ts = clock.unix_timestamp as u64;
 
         for i in 0..NUM_MARKETS {
-            let spot_market_acc = &spot_market_accs[i];
-            let spot_market = serum_dex::state::MarketState::load(
-                spot_market_acc, dex_prog_acc.key
-            )?;
+            let spot_market_acc: &AccountInfo = &spot_market_accs[i];
+
+            let spot_market = load_market_state(spot_market_acc, dex_prog_acc.key)?;
+
             let base_mint_acc = &token_mint_accs[i];
             let base_vault_acc = &vault_accs[i];
             let base_vault = Account::unpack(&base_vault_acc.try_borrow_data()?)?;
@@ -240,7 +241,7 @@ impl Processor {
         assert_eq!(&margin_account.mango_group, mango_group_acc.key);
 
         for i in 0..NUM_MARKETS {
-            // TODO verify the open orders are initialized
+            // TODO if open orders initialized make sure it has proper owner else it's 0
             assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i]);
         }
 

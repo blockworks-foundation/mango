@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use solana_program::instruction::{Instruction, AccountMeta};
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
-use crate::state::{NUM_TOKENS, NUM_MARKETS};
 
 
 #[repr(C)]
@@ -22,7 +21,7 @@ pub enum MangoInstruction {
     ///     markets. Quote currency mint should be last.
     ///     e.g. for spot markets BTC/USDC, ETH/USDC -> [BTC, ETH, USDC]
     ///
-    /// 5+NUM_TOKENS..5+2*NUM_TOKENS `[writable]`
+    /// 5+NUM_TOKENS..5+2*NUM_TOKENS `[]`
     ///     vault_accs - Vault owned by signer_acc.key for each of the mints
     ///
     /// 5+2*NUM_TOKENS..5+2*NUM_TOKENS+NUM_MARKETS `[]`
@@ -128,9 +127,9 @@ pub fn init_mango_group(
     mango_group_pk: &Pubkey,
     signer_pk: &Pubkey,
     dex_prog_id: &Pubkey,
-    mint_pks: &[Pubkey; NUM_TOKENS],
-    vault_pks: &[Pubkey; NUM_TOKENS],
-    spot_market_pks: &[Pubkey; NUM_MARKETS],
+    mint_pks: &[Pubkey],
+    vault_pks: &[Pubkey],
+    spot_market_pks: &[Pubkey],
     signer_nonce: u64,
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
@@ -144,7 +143,7 @@ pub fn init_mango_group(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
     accounts.extend(vault_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
+        |pk| AccountMeta::new_readonly(*pk, false))
     );
     accounts.extend(spot_market_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
@@ -164,7 +163,7 @@ pub fn init_margin_account(
     mango_group_pk: &Pubkey,
     margin_account_pk: &Pubkey,
     owner_pk: &Pubkey,
-    open_orders_pks: &[Pubkey; NUM_MARKETS]
+    open_orders_pks: &Vec<Pubkey>
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
         AccountMeta::new_readonly(*mango_group_pk, false),
@@ -223,10 +222,10 @@ pub fn withdraw(
     token_account_pk: &Pubkey,
     vault_pk: &Pubkey,
     signer_pk: &Pubkey,
-    open_orders_pks: &[Pubkey; NUM_MARKETS],
-    spot_market_pks: &[Pubkey; NUM_MARKETS],
-    bids_pks: &[Pubkey; NUM_MARKETS],
-    asks_pks: &[Pubkey; NUM_MARKETS],
+    open_orders_pks: &[Pubkey],
+    spot_market_pks: &[Pubkey],
+    bids_pks: &[Pubkey],
+    asks_pks: &[Pubkey],
     quantity: u64
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![

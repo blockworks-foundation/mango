@@ -347,3 +347,21 @@ pub fn load_asks_mut<'a>(
 pub fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
+
+pub fn load_market_state<'a>(
+    market_account: &'a AccountInfo,
+    program_id: &Pubkey,
+) -> DexResult<RefMut<'a, serum_dex::state::MarketState>> {
+    assert_eq!(market_account.owner, program_id);
+
+    let state: RefMut<'a, serum_dex::state::MarketState>;
+    state = RefMut::map(market_account.try_borrow_mut_data()?, |data| {
+        let data_len = data.len() - 12;
+        let (_, rest) = data.split_at_mut(5);
+        let (mid, _) = rest.split_at_mut(data_len);
+        from_bytes_mut(mid)
+    });
+
+    state.check_flags()?;
+    Ok(state)
+}
