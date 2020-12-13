@@ -8,11 +8,20 @@
     "dex_program_id": "ykoySLH8uzMqUUEogo3avc17rqQ81SpBoCEybLQMmvn",
     "mango_groups": {
       "BTC_ETH_USDC": {
-        "mango_group": "AcAp9x1LHMZjrypyWAvfc2WGaqavLTihvzgdRPR9jzwQ",
-        "vaults": [
-          "6q8kmReGdrDq3dBSM2PJnjQQhgc2Fk2UywLS4otVaGMi",
-          "8D48HP94GMkG3dtxpFTi7ZJtPqTSyCfeR1Vb1GiKcPst",
-          "B2uwGjBz7YVCF2PZjk2F7wf1eADGpRXHnNN6UQFinUno"
+        "mango_group_pk": "Ahy99oUkg2Wv5xszE4BRKTkxD3eoscieCAjWV4ZHnrSA",
+        "mint_pks": [
+          "C6kYXcaRUMqeBF5fhg165RWU7AnpT9z92fvKNoMqjmz6",
+          "8p968u9m7jZzKSsqxFDqki69MjqdFkwPM9FN4AN8hvHR",
+          "Fq939Y5hycK62ZGwBjftLY2VyxqAQ8f1MxRqBMdAaBS7"
+        ],
+        "spot_market_pks": [
+          "8VaH6YrG26WE7ujytWLbg4fg9ZiwC9KKSMDpPXzXPgXy",
+          "DNr8ypxHyAcMdKvEorqatpkX6g6TamGAM7jMb4kYZzn8"
+        ],
+        "vault_pks": [
+          "64rKf3Qb2V6G2AwToGQid4ELLYQSdJTmovqEEamzKZS",
+          "ELptK3PHDsLFZtaGQwXLekZpiy7mpunAyoeVsdYsjiBf",
+          "9MJFYC6ukk3Jejcq5jmoZknGVYXtjgHUqmYoA2uFUD7k"
         ]
       }
     },

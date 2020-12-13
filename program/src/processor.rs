@@ -90,7 +90,6 @@ impl Processor {
             mango_group.tokens[i] = *base_mint_acc.key;
             mango_group.vaults[i] = *base_vault_acc.key;
 
-
             // TODO what to initialize index to?
             mango_group.indexes[i] = MangoIndex {
                 last_update: curr_ts,

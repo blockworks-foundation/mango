@@ -18,7 +18,7 @@ solana-cli = "=1.4.14"
 solana-sdk = "=1.4.14"
 mango = { version = "*", path = "../program", features=["no-entrypoint"] }
 spl-token = { version = "*", features=["no-entrypoint"] }
-spl-token-swap = { version = "*",  git = "https://github.com/solana-labs/solana-program-library.git", features=["no-entrypoint"]}
 serde_json = "*"
 chrono = "*"
 common = { version = "*", path = "../common" }
+serum_dex = { version = "*", git = "https://github.com/project-serum/serum-dex.git", features=["no-entrypoint", "client"] }
