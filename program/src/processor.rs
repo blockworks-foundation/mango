@@ -28,11 +28,9 @@ impl Processor {
         signer_nonce: u64
     ) -> ProgramResult {
         const NUM_FIXED: usize = 5;
-        msg!("here0");
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_TOKENS + NUM_MARKETS];
         let (fixed_accs, token_mint_accs, vault_accs, spot_market_accs) =
             array_refs![accounts, NUM_FIXED, NUM_TOKENS, NUM_TOKENS, NUM_MARKETS];
-        msg!("here0");
 
         let [
             mango_group_acc,
@@ -59,43 +57,34 @@ impl Processor {
         mango_group.total_deposits = [U64F64::from_num(0); NUM_TOKENS];
         mango_group.total_borrows = [U64F64::from_num(0); NUM_TOKENS];
 
-        let quote_mint_acc = &token_mint_accs[NUM_MARKETS];
-        let quote_vault_acc = &vault_accs[NUM_MARKETS];
-        let quote_vault = Account::unpack(&quote_vault_acc.try_borrow_data()?)?;
-        assert!(quote_vault.is_initialized());
-        assert_eq!(&quote_vault.owner, signer_acc.key);
-        assert_eq!(&quote_vault.mint, quote_mint_acc.key);
-        assert_eq!(quote_vault_acc.owner, &spl_token::id());
-
         let curr_ts = clock.unix_timestamp as u64;
-
-        for i in 0..NUM_MARKETS {
-            let spot_market_acc: &AccountInfo = &spot_market_accs[i];
-
-            let spot_market = load_market_state(spot_market_acc, dex_prog_acc.key)?;
-
-            let base_mint_acc = &token_mint_accs[i];
-            let base_vault_acc = &vault_accs[i];
-            let base_vault = Account::unpack(&base_vault_acc.try_borrow_data()?)?;
-            assert!(base_vault.is_initialized());
-            assert_eq!(&base_vault.owner, signer_acc.key);
-            assert_eq!(&base_vault.mint, base_mint_acc.key);
-            assert_eq!(base_vault_acc.owner, &spl_token::id());
-
-            let sm_base_mint = spot_market.coin_mint;
-            let sm_quote_mint = spot_market.pc_mint;
-            assert_eq!(sm_base_mint, base_mint_acc.key.to_aligned_bytes());
-            assert_eq!(sm_quote_mint, quote_mint_acc.key.to_aligned_bytes());
-            mango_group.spot_markets[i] = *spot_market_acc.key;
-            mango_group.tokens[i] = *base_mint_acc.key;
-            mango_group.vaults[i] = *base_vault_acc.key;
-
-            // TODO what to initialize index to?
+        for i in 0..NUM_TOKENS {
+            let mint_acc = &token_mint_accs[i];
+            let vault_acc = &vault_accs[i];
+            let vault = Account::unpack(&vault_acc.try_borrow_data()?)?;
+            assert!(vault.is_initialized());
+            assert_eq!(&vault.owner, signer_acc.key);
+            assert_eq!(&vault.mint, mint_acc.key);
+            assert_eq!(vault_acc.owner, &spl_token::id());
+            mango_group.tokens[i] = *mint_acc.key;
+            mango_group.vaults[i] = *vault_acc.key;
             mango_group.indexes[i] = MangoIndex {
                 last_update: curr_ts,
                 borrow: U64F64::from_num(1),
                 deposit: U64F64::from_num(1)  // Smallest unit of interest is 0.0001% or 0.000001
             }
+        }
+
+        for i in 0..NUM_MARKETS {
+            let spot_market_acc: &AccountInfo = &spot_market_accs[i];
+            let spot_market = load_market_state(
+                spot_market_acc, dex_prog_acc.key
+            )?;
+            let sm_base_mint = spot_market.coin_mint;
+            let sm_quote_mint = spot_market.pc_mint;
+            assert_eq!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes());
+            assert_eq!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes());
+            mango_group.spot_markets[i] = *spot_market_acc.key;
         }
 
         Ok(())

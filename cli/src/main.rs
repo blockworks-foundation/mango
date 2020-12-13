@@ -34,6 +34,9 @@ pub enum Command {
         ids_path: String,
         #[clap(long, short)]
         tokens: Vec<String>,
+        #[clap(long, short)]
+        mango_program_id: Option<String>,
+
     },
     InitMarginAccount {
         #[clap(long, short)]
@@ -83,17 +86,24 @@ pub fn start(opts: Opts) -> Result<()> {
         Command::InitMangoGroup {
             payer,
             ids_path,
-            tokens
+            tokens,
+            mango_program_id
         } => {
             println!("InitMangoGroup");
             let payer = read_keypair_file(payer.as_str())?;
             let mut ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
             let cluster_name = opts.cluster.name();
             let cluster_ids = &ids[cluster_name];
-            let mango_program_id = cluster_ids["mango_program_id"].as_str().unwrap();
+
+            let mango_program_id = if let Some(pk_str) = mango_program_id {
+                Pubkey::from_str(pk_str.as_str())?
+            } else {
+                let mango_program_id = cluster_ids["mango_program_id"].as_str().unwrap();
+                Pubkey::from_str(mango_program_id)?
+            };
+
             let dex_program_id = cluster_ids["dex_program_id"].as_str().unwrap();
 
-            let mango_program_id = Pubkey::from_str(mango_program_id)?;
             let mango_group_pk = create_account_rent_exempt(
                 &client, &payer, size_of::<MangoGroup>(), &mango_program_id
             )?.pubkey();
@@ -155,6 +165,7 @@ pub fn start(opts: Opts) -> Result<()> {
 
             let ids = ids.as_object_mut().unwrap();
             let cluster_ids = ids.get_mut(cluster_name).unwrap().as_object_mut().unwrap();
+            cluster_ids.insert("mango_program_id".to_string(), Value::from(mango_program_id.to_string()));
             let mango_groups = cluster_ids.get_mut("mango_groups").unwrap().as_object_mut().unwrap();
             mango_groups.insert(group_name, group_keys);
             let f = File::create(ids_path.as_str()).unwrap();
