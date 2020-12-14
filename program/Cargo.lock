@@ -307,6 +307,7 @@ dependencies = [
  "byteorder",
  "enumflags2",
  "fixed",
+ "num-derive",
  "num_enum",
  "safe-transmute",
  "serde",

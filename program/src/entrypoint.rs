@@ -1,5 +1,5 @@
 use solana_program::{
-    account_info::AccountInfo, entrypoint::ProgramResult, entrypoint, pubkey::Pubkey,
+    msg, account_info::AccountInfo, entrypoint::ProgramResult, entrypoint, pubkey::Pubkey,
 };
 
 use crate::processor::Processor;
@@ -11,5 +11,10 @@ fn process_instruction(
     accounts: &[AccountInfo],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    Processor::process(program_id, accounts, instruction_data)
+    Processor::process(program_id, accounts, instruction_data).map_err(
+        |e| {
+            msg!("{}", e);  // log the error
+            e.into()  // convert MangoError to generic ProgramError
+        }
+    )
 }

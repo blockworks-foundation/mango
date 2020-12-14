@@ -26,7 +26,7 @@ cargo run -- $CLUSTER deposit --payer $KEYPAIR --ids-path $IDS_PATH --mango-grou
 
 
 ### Run Full
-```
+``` 
 cd ~/mango
 pushd program
 cargo build-bpf

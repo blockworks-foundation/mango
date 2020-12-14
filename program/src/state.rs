@@ -5,14 +5,14 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut, from_bytes, from_bytes_mut, Pod, try_from_bytes, try_from_bytes_mut, Zeroable};
 use enumflags2::BitFlags;
 use fixed::types::U64F64;
-use serum_dex::error::DexResult;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
-use solana_program::entrypoint::ProgramResult;
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
+
+use crate::error::{check_assert, SourceFileId, MangoResult};
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
@@ -22,6 +22,17 @@ pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
 pub const YEAR: u64 = 31536000;
+
+macro_rules! prog_assert {
+    ($cond:expr) => {
+        check_assert($cond, line!() as u16, SourceFileId::State)
+    }
+}
+macro_rules! prog_assert_eq {
+    ($x:expr, $y:expr) => {
+        check_assert($x == $y, line!() as u16, SourceFileId::State)
+    }
+}
 
 
 pub trait Loadable: Pod {
@@ -100,7 +111,7 @@ impl MangoGroup {
         }
     }
 
-    pub fn update_indexes(&mut self, clock: &Clock) -> ProgramResult {
+    pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         let curr_ts = clock.unix_timestamp as u64;
         let fee_adj = U64F64::from_num(19) / U64F64::from_num(20);
 
@@ -114,7 +125,7 @@ impl MangoGroup {
 
             let native_deposits = self.total_deposits[i] * index.deposit;
             let native_borrows = self.total_borrows[i] * index.borrow;
-            assert!(native_borrows <= native_deposits);
+            prog_assert!(native_borrows <= native_deposits)?;
 
             let utilization: U64F64 = native_borrows / native_deposits;
             let borrow_interest = interest_rate * U64F64::from_num(curr_ts - index.last_update);
@@ -234,7 +245,7 @@ fn remove_slop_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
 #[allow(dead_code)]
 fn strip_header<'a, H: Pod, D: Pod>(
     account: &'a AccountInfo
-) -> Result<(Ref<'a, H>, Ref<'a, [D]>), ProgramError> {
+) -> MangoResult<(Ref<'a, H>, Ref<'a, [D]>)> {
     let (header, inner): (Ref<'a, [H]>, Ref<'a, [D]>) =
         Ref::map_split(account.try_borrow_data()?, |raw_data| {
 
@@ -256,7 +267,7 @@ fn strip_header<'a, H: Pod, D: Pod>(
 #[allow(dead_code)]
 fn strip_header_mut<'a, H: Pod, D: Pod>(
     account: &'a AccountInfo
-) -> Result<(RefMut<'a, H>, RefMut<'a, [D]>), ProgramError> {
+) -> MangoResult<(RefMut<'a, H>, RefMut<'a, [D]>)> {
     let (header, inner): (RefMut<'a, [H]>, RefMut<'a, [D]>) =
         RefMut::map_split(account.try_borrow_mut_data()?, |raw_data| {
 
@@ -278,7 +289,7 @@ fn strip_header_mut<'a, H: Pod, D: Pod>(
 
 fn strip_data_header_mut<'a, H: Pod, D: Pod>(
     orig_data: RefMut<'a, [u8]>,
-) -> Result<(RefMut<'a, H>, RefMut<'a, [D]>), ProgramError> {
+) -> MangoResult<(RefMut<'a, H>, RefMut<'a, [D]>)> {
     let (header, inner): (RefMut<'a, [H]>, RefMut<'a, [D]>) =
         RefMut::map_split(orig_data, |data| {
 
@@ -294,8 +305,8 @@ fn strip_data_header_mut<'a, H: Pod, D: Pod>(
 }
 
 
-fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, [u8]>, ProgramError> {
-    assert!(acc.data_len() >= 12);
+fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> MangoResult<Ref<'a, [u8]>> {
+    prog_assert!(acc.data_len() >= 12)?;
     let unpadded_data: Ref<[u8]> = Ref::map(acc.try_borrow_data()?, |data| {
         let data_len = data.len() - 12;
         let (_, rest) = data.split_at(5);
@@ -305,8 +316,8 @@ fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, [u8]>, ProgramE
     Ok(unpadded_data)
 }
 
-fn strip_dex_padding_mut<'a>(acc: &'a AccountInfo) -> Result<RefMut<'a, [u8]>, ProgramError> {
-    assert!(acc.data_len() >= 12);
+fn strip_dex_padding_mut<'a>(acc: &'a AccountInfo) -> MangoResult<RefMut<'a, [u8]>> {
+    prog_assert!(acc.data_len() >= 12)?;
     let unpadded_data: RefMut<[u8]> = RefMut::map(acc.try_borrow_mut_data()?, |data| {
         let data_len = data.len() - 12;
         let (_, rest) = data.split_at_mut(5);
@@ -321,25 +332,25 @@ fn strip_dex_padding_mut<'a>(acc: &'a AccountInfo) -> Result<RefMut<'a, [u8]>, P
 pub fn load_bids_mut<'a>(
     sm: &RefMut<serum_dex::state::MarketState>,
     bids: &'a AccountInfo
-) -> DexResult<RefMut<'a, serum_dex::critbit::Slab>> {
-    assert_eq!(&bids.key.to_aligned_bytes(), &identity(sm.bids));
+) -> MangoResult<RefMut<'a, serum_dex::critbit::Slab>> {
+    prog_assert_eq!(&bids.key.to_aligned_bytes(), &identity(sm.bids))?;
 
     let orig_data = strip_dex_padding_mut(bids)?;
     let (header, buf) = strip_data_header_mut::<OrderBookStateHeader, u8>(orig_data)?;
     let flags = BitFlags::from_bits(header.account_flags).unwrap();
-    assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Bids));
+    prog_assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Bids))?;
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
 pub fn load_asks_mut<'a>(
     sm: &RefMut<serum_dex::state::MarketState>,
     asks: &'a AccountInfo
-) -> Result<RefMut<'a, serum_dex::critbit::Slab>, ProgramError> {
-    assert_eq!(&asks.key.to_aligned_bytes(), &identity(sm.asks));
+) -> MangoResult<RefMut<'a, serum_dex::critbit::Slab>> {
+    prog_assert_eq!(&asks.key.to_aligned_bytes(), &identity(sm.asks))?;
     let orig_data = strip_dex_padding_mut(asks)?;
     let (header, buf) = strip_data_header_mut::<OrderBookStateHeader, u8>(orig_data)?;
     let flags = BitFlags::from_bits(header.account_flags).unwrap();
-    assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Asks));
+    prog_assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Asks))?;
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
@@ -350,8 +361,8 @@ pub fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::s
 pub fn load_market_state<'a>(
     market_account: &'a AccountInfo,
     program_id: &Pubkey,
-) -> DexResult<RefMut<'a, serum_dex::state::MarketState>> {
-    assert_eq!(market_account.owner, program_id);
+) -> MangoResult<RefMut<'a, serum_dex::state::MarketState>> {
+    prog_assert_eq!(market_account.owner, program_id)?;
 
     let state: RefMut<'a, serum_dex::state::MarketState>;
     state = RefMut::map(market_account.try_borrow_mut_data()?, |data| {
@@ -363,4 +374,5 @@ pub fn load_market_state<'a>(
 
     state.check_flags()?;
     Ok(state)
+
 }

@@ -5,7 +5,6 @@ use fixed::types::U64F64;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
-use solana_program::entrypoint::ProgramResult;
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack};
@@ -14,19 +13,31 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::Account;
 
+use crate::error::{check_assert, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, load_market_state};
+use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_market_state, load_open_orders,
+                   Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
 use crate::utils::{gen_signer_key, gen_signer_seeds, get_dex_best_price};
 
-pub struct Processor {}
+macro_rules! prog_assert {
+    ($cond:expr) => {
+        check_assert($cond, line!() as u16, SourceFileId::Processor)
+    }
+}
+macro_rules! prog_assert_eq {
+    ($x:expr, $y:expr) => {
+        check_assert($x == $y, line!() as u16, SourceFileId::Processor)
+    }
+}
 
+pub struct Processor {}
 
 impl Processor {
     fn init_mango_group(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         signer_nonce: u64
-    ) -> ProgramResult {
+    ) -> MangoResult<()> {
         const NUM_FIXED: usize = 5;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_TOKENS + NUM_MARKETS];
         let (fixed_accs, token_mint_accs, vault_accs, spot_market_accs) =
@@ -44,13 +55,13 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
 
-        assert_eq!(mango_group_acc.owner, program_id);
-        assert_eq!(mango_group.account_flags, 0);
+        prog_assert_eq!(mango_group_acc.owner, program_id)?;
+        prog_assert_eq!(mango_group.account_flags, 0)?;
         mango_group.account_flags = (AccountFlag::Initialized | AccountFlag::MangoGroup).bits();
 
-        assert!(rent.is_exempt(mango_group_acc.lamports(), size_of::<MangoGroup>()));
+        prog_assert!(rent.is_exempt(mango_group_acc.lamports(), size_of::<MangoGroup>()))?;
 
-        assert_eq!(gen_signer_key(signer_nonce, mango_group_acc.key, program_id)?, *signer_acc.key);
+        prog_assert_eq!(gen_signer_key(signer_nonce, mango_group_acc.key, program_id)?, *signer_acc.key)?;
         mango_group.signer_nonce = signer_nonce;
         mango_group.signer_key = *signer_acc.key;
         mango_group.dex_program_id = *dex_prog_acc.key;
@@ -62,10 +73,10 @@ impl Processor {
             let mint_acc = &token_mint_accs[i];
             let vault_acc = &vault_accs[i];
             let vault = Account::unpack(&vault_acc.try_borrow_data()?)?;
-            assert!(vault.is_initialized());
-            assert_eq!(&vault.owner, signer_acc.key);
-            assert_eq!(&vault.mint, mint_acc.key);
-            assert_eq!(vault_acc.owner, &spl_token::id());
+            prog_assert!(vault.is_initialized())?;
+            prog_assert_eq!(&vault.owner, signer_acc.key)?;
+            prog_assert_eq!(&vault.mint, mint_acc.key)?;
+            prog_assert_eq!(vault_acc.owner, &spl_token::id())?;
             mango_group.tokens[i] = *mint_acc.key;
             mango_group.vaults[i] = *vault_acc.key;
             mango_group.indexes[i] = MangoIndex {
@@ -82,8 +93,8 @@ impl Processor {
             )?;
             let sm_base_mint = spot_market.coin_mint;
             let sm_quote_mint = spot_market.pc_mint;
-            assert_eq!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes());
-            assert_eq!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes());
+            prog_assert_eq!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes())?;
+            prog_assert_eq!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes())?;
             mango_group.spot_markets[i] = *spot_market_acc.key;
         }
 
@@ -93,7 +104,7 @@ impl Processor {
     fn init_margin_account(
         program_id: &Pubkey,
         accounts: &[AccountInfo]
-    ) -> ProgramResult {
+    ) -> MangoResult<()> {
         const NUM_FIXED: usize = 4;
         let accounts = array_ref![accounts, 0, NUM_FIXED + NUM_MARKETS];
         let (fixed_accs, open_orders_accs) = array_refs![accounts, NUM_FIXED, NUM_MARKETS];
@@ -106,16 +117,16 @@ impl Processor {
         ] = fixed_accs;
 
         let mango_group = MangoGroup::load(mango_group_acc)?;
-        assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
-        assert_eq!(mango_group_acc.owner, program_id);
+        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+        prog_assert_eq!(mango_group_acc.owner, program_id)?;
 
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
         let rent = Rent::from_account_info(rent_acc)?;
 
-        assert_eq!(margin_account_acc.owner, program_id);
-        assert!(rent.is_exempt(margin_account_acc.lamports(), size_of::<MarginAccount>()));
-        assert_eq!(margin_account.account_flags, 0);
-        assert!(owner_acc.is_signer);
+        prog_assert_eq!(margin_account_acc.owner, program_id)?;
+        prog_assert!(rent.is_exempt(margin_account_acc.lamports(), size_of::<MarginAccount>()))?;
+        prog_assert_eq!(margin_account.account_flags, 0)?;
+        prog_assert!(owner_acc.is_signer)?;
 
         margin_account.account_flags = (AccountFlag::Initialized | AccountFlag::MarginAccount).bits();
         margin_account.mango_group = *mango_group_acc.key;
@@ -125,10 +136,10 @@ impl Processor {
             let open_orders_acc = &open_orders_accs[i];
             let open_orders = load_open_orders(open_orders_acc)?;
 
-            assert!(rent.is_exempt(open_orders_acc.lamports(), size_of::<serum_dex::state::OpenOrders>()));
+            prog_assert!(rent.is_exempt(open_orders_acc.lamports(), size_of::<serum_dex::state::OpenOrders>()))?;
             let open_orders_flags = open_orders.account_flags;
-            assert_eq!(open_orders_flags, 0);
-            assert_eq!(open_orders_acc.owner, &mango_group.dex_program_id);
+            prog_assert_eq!(open_orders_flags, 0)?;
+            prog_assert_eq!(open_orders_acc.owner, &mango_group.dex_program_id)?;
 
             margin_account.open_orders[i] = *open_orders_acc.key;
         }
@@ -141,7 +152,7 @@ impl Processor {
         Ok(())
     }
 
-    fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> ProgramResult {
+    fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> MangoResult<()> {
         const NUM_FIXED: usize = 8;
         let accounts = array_ref![accounts, 0, NUM_FIXED];
         let [
@@ -154,20 +165,20 @@ impl Processor {
             token_prog_acc,
             clock_acc,
         ] = accounts;
-        assert!(owner_acc.is_signer);
+        prog_assert!(owner_acc.is_signer)?;
 
         // TODO move this into load_mut_checked function
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
-        assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
-        assert_eq!(mango_group_acc.owner, program_id);
+        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+        prog_assert_eq!(mango_group_acc.owner, program_id)?;
 
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
-        assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
-        assert_eq!(&margin_account.owner, owner_acc.key);
-        assert_eq!(&margin_account.mango_group, mango_group_acc.key);
+        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        prog_assert_eq!(&margin_account.mango_group, mango_group_acc.key)?;
 
         let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
-        assert_eq!(&mango_group.vaults[token_index], vault_acc.key);
+        prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -194,7 +205,7 @@ impl Processor {
         Ok(())
     }
 
-    fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> ProgramResult {
+    fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> MangoResult<()> {
         const NUM_FIXED: usize = 9;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS];
         let (
@@ -216,37 +227,37 @@ impl Processor {
             token_prog_acc,
             clock_acc,
         ] = fixed_accs;
-        assert!(owner_acc.is_signer);
+        prog_assert!(owner_acc.is_signer)?;
 
         // TODO move this into load_mut_checked function
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
-        assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits());
-        assert_eq!(mango_group_acc.owner, program_id);
+        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+        prog_assert_eq!(mango_group_acc.owner, program_id)?;
 
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
-        assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits());
-        assert_eq!(&margin_account.owner, owner_acc.key);
-        assert_eq!(&margin_account.mango_group, mango_group_acc.key);
+        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        prog_assert_eq!(&margin_account.mango_group, mango_group_acc.key)?;
 
         for i in 0..NUM_MARKETS {
             // TODO if open orders initialized make sure it has proper owner else it's 0
-            assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i]);
+            prog_assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i])?;
         }
 
         let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
-        assert_eq!(&mango_group.vaults[token_index], vault_acc.key);
+        prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
         let index: &MangoIndex = &mango_group.indexes[token_index];
         let available: u64 = (margin_account.deposits[token_index] * index.deposit).to_num();
-        assert!(available >= quantity);  // TODO just borrow (quantity - available)
+        prog_assert!(available >= quantity)?;  // TODO just borrow (quantity - available)
 
         let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
         let free_equity = margin_account.get_free_equity(&mango_group, &prices, open_orders_accs)?;
         let val_withdraw = prices[token_index] * U64F64::from_num(quantity);
-        assert!(free_equity >= val_withdraw);
+        prog_assert!(free_equity >= val_withdraw)?;
 
         let withdraw_instruction = spl_token::instruction::transfer(
             &spl_token::ID,
@@ -277,7 +288,7 @@ impl Processor {
         spot_market_accs: &[AccountInfo],
         bids_accs: &[AccountInfo],
         asks_accs: &[AccountInfo]
-    ) -> Result<[U64F64; NUM_TOKENS], ProgramError> {
+    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
         // Determine prices from serum dex (TODO in the future use oracle)
         let mut prices = [U64F64::from_num(0); NUM_TOKENS];
         prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
@@ -285,10 +296,11 @@ impl Processor {
 
         for i in 0..NUM_MARKETS {
             let spot_market_acc = &spot_market_accs[i];
-            assert_eq!(&mango_group.spot_markets[i], spot_market_acc.key);
-            let spot_market = serum_dex::state::MarketState::load(
+            prog_assert_eq!(&mango_group.spot_markets[i], spot_market_acc.key)?;
+            let spot_market = load_market_state(
                 spot_market_acc, &mango_group.dex_program_id
             )?;
+
             let bids = load_bids_mut(&spot_market, &bids_accs[i])?;
             let asks = load_asks_mut(&spot_market, &asks_accs[i])?;
 
@@ -310,7 +322,7 @@ impl Processor {
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         data: &[u8]
-    ) -> ProgramResult {
+    ) -> MangoResult<()> {
         let instruction = MangoInstruction::unpack(data).ok_or(ProgramError::InvalidInstructionData)?;
         match instruction {
             MangoInstruction::InitMangoGroup {
