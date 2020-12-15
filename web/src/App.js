@@ -1,11 +1,12 @@
 import React, {useEffect, useMemo, useState} from 'react';
 
-import { Connection } from '@solana/web3.js';
+import { Account, Connection, PublicKey, sendAndConfirmRawTransaction, SystemProgram, Transaction, TransactionInstruction, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
 import { TokenInstructions } from '@project-serum/serum';
 import Wallet from '@project-serum/sol-wallet-adapter';
 
 import AmountInput from './components/AmountInput';
 
+import { MarginAccountLayout, OpenOrdersLayout, encodeMangoInstruction } from './layouts';
 import ID from './ids.json';
 
 import './App.css';
@@ -13,13 +14,14 @@ import './App.css';
 
 function App() {
 
-  const [connected, setConnected] = useState(false);
   const [network, setNetwork] = useState('devnet');
   const config = useMemo(() => ID[network], [network]);
   const clusterUrl = useMemo(() => ID.cluster_urls[network], [network]);
   const connection = useMemo(() => new Connection(clusterUrl), [clusterUrl]);
   const wallet = useMemo(() => new Wallet('https://www.sollet.io', clusterUrl), [clusterUrl]);
 
+
+  const [connected, setConnected] = useState(false);
   useEffect(() => {
     wallet.on('connect', () => {
       console.log('Connected to wallet ', wallet.publicKey.toBase58());
@@ -57,7 +59,90 @@ function App() {
     return response.value;
   }
 
-  async function deposit() {
+  async function createAccountInstruction(space, programId) {
+    const account = new Account();
+    const instruction = SystemProgram.createAccount({
+        fromPubkey: wallet.publicKey,
+        newAccountPubkey: account.publicKey,
+        lamports: await connection.getMinimumBalanceForRentExemption(space),
+        space,
+        programId,
+      })
+
+    return { account, instruction };
+  }
+
+  async function signTransaction(transaction, additionalSigners = []) {
+    transaction.recentBlockhash = (await connection.getRecentBlockhash('max')).blockhash;
+    transaction.setSigners(wallet.publicKey, ...additionalSigners.map((s) => s.publicKey));
+    if (additionalSigners.length > 0) {
+      transaction.partialSign(...additionalSigners);
+    }
+    let res = await wallet.signTransaction(transaction);
+    return res;
+  }
+
+  async function sendSignedTransaction(signedTransaction) {
+    const rawTransaction = signedTransaction.serialize();
+    return await sendAndConfirmRawTransaction(connection, rawTransaction)
+  }
+
+  async function sendTransaction(transaction, additionalSigners = []) {
+    const signedTransaction = await signTransaction(transaction, additionalSigners);
+    return await sendSignedTransaction(signedTransaction);
+  }
+
+
+  const [marginAccount, setMarginAccount] = useState(undefined);
+
+  async function initMarginAccount() {
+    const dex_program_id = new PublicKey(config.dex_program_id);
+    const mango_program_id = new PublicKey(config.mango_program_id);
+    const mango_group_name = "BTC_ETH_USDC";
+    const mango_group_config = config.mango_groups[mango_group_name];
+    const mango_group_pk = new PublicKey(mango_group_config.mango_group_pk);
+    const spot_market_pks = mango_group_config.spot_market_pks.map( pk => new PublicKey(pk) );
+
+    // create instructions
+    const mango_account = await createAccountInstruction(MarginAccountLayout.span, mango_program_id);
+    const open_orders = await Promise.all(spot_market_pks.map(_ => createAccountInstruction(OpenOrdersLayout.span, dex_program_id)));
+
+    console.log('dex_program_id', dex_program_id.toString());
+    console.log('mango_program_id', mango_program_id.toString());
+    console.log('mango_account', mango_account);
+    console.log('open_orders', open_orders);
+    async function initMarginAccountInstruction(programId) {
+      let keys = [
+        { isSigner: false, isWritable: false, pubkey: mango_group_pk},
+        { isSigner: false, isWritable: true,  pubkey: mango_account.account.publicKey },
+        { isSigner: true,  isWritable: false, pubkey: wallet.publicKey },
+        { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY },
+        ...open_orders.map( (o) => ({ isSigner: false, isWritable: false, pubkey: o.account.publicKey }) )
+      ];
+      let data = encodeMangoInstruction({ InitMarginAccount: {} });
+      return new TransactionInstruction({ keys, data, programId });
+    };
+
+    const init_mango_account = await initMarginAccountInstruction(mango_program_id);
+    console.log('init_mango_account', init_mango_account);
+
+    // build transaction
+    const transaction = new Transaction();
+    transaction.add(mango_account.instruction);
+    transaction.add(...open_orders.map( o => o.instruction ));
+    transaction.add(init_mango_account);
+
+    const additionalSigners = [
+      mango_account.account,
+      ...open_orders.map( o => o.account ),
+    ];
+
+    console.log('sending initMarginAccount', transaction, additionalSigners);
+    const txid = await sendTransaction(transaction, additionalSigners);
+    console.log('sent initMarginAccount:', txid);
+  }
+
+  async function deposit(amount) {
   }
 
   function handleOnChange(e) {
@@ -93,6 +178,16 @@ function App() {
           <pre>
             { accounts.map( (a) => <>{a[0]}: {a[1]}<br /></> ) }
           </pre>
+        </div>
+
+        <div className="box">
+          <button className="button" disabled={!connected} onClick={initMarginAccount}>
+             Init Margin Account
+          </button>
+          <p>
+            Needs to be connected: { connected ? "✅" : "❌" }
+          </p>
+
         </div>
 
         <div className="box">
