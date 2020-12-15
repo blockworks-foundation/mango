@@ -7,7 +7,7 @@ export const MarginAccountLayout = BufferLayout.struct([
   BufferLayout.blob(32, 'owner'),
   BufferLayout.blob(16*NUM_TOKENS, 'deposits'),
   BufferLayout.blob(16*NUM_TOKENS, 'borrows'),
-  BufferLayout.blob(8, 'borrows'),
+  BufferLayout.blob(8*NUM_TOKENS, 'positions'),
   BufferLayout.blob(32*(NUM_TOKENS-1), 'open_orders'),
 ]);
 
@@ -36,8 +36,8 @@ MangoInstructionLayout.addVariant(3, BufferLayout.struct([BufferLayout.nu64('qua
 
 const instructionMaxSpan = Math.max(...Object.values(MangoInstructionLayout.registry).map((r) => r.span));
 export function encodeMangoInstruction(data) {
-    const b = Buffer.alloc(instructionMaxSpan);
-    const span = MangoInstructionLayout.encode(data, b);
-    return b.slice(0, span);
+  const b = Buffer.alloc(instructionMaxSpan);
+  const span = MangoInstructionLayout.encode(data, b);
+  return b.slice(0, span);
 }
 

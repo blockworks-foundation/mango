@@ -40,7 +40,11 @@ function App() {
 
 
   const [accounts, setAccounts] = useState([]);
-  async function fetchAccounts() {
+  async function fetchSPLAccounts() {
+    if (!wallet.publicKey || !connection || !connected) {
+      return
+    }
+
     console.log('Fetch all SPL tokens for', wallet.publicKey.toString());
 
     const response = await connection.getParsedTokenAccountsByOwner(
@@ -92,8 +96,94 @@ function App() {
     return await sendSignedTransaction(signedTransaction);
   }
 
+  async function getFilteredProgramAccounts(connection, programId, filters) {
+    const resp = await connection._rpcRequest('getProgramAccounts', [
+      programId.toBase58(),
+      {
+        commitment: connection.commitment,
+        filters,
+        encoding: 'base64',
+      },
+    ]);
 
-  const [marginAccount, setMarginAccount] = useState(undefined);
+    if (resp.error) {
+      throw new Error(resp.error.message);
+    }
+    return resp.result.map(({ pubkey, account: { data, executable, owner, lamports } }) => ({
+      publicKey: new PublicKey(pubkey),
+      accountInfo: {
+        data: Buffer.from(data[0], 'base64'),
+        executable,
+        owner: new PublicKey(owner),
+        lamports,
+      },
+    }));
+  }
+
+
+  const [marginAccounts, setMarginAccounts] = useState(undefined);
+
+  async function fetchMarginAccounts() {
+    if (!wallet.publicKey || !connection || !connected) {
+      console.error('ensure wallet is connected', wallet, connection, connected);
+      return
+    }
+
+    const programId = new PublicKey(config.mango_program_id);
+    const filters = [
+      {
+        memcmp: {
+          offset: MarginAccountLayout.offsetOf('owner'),
+          bytes: wallet.publicKey.toBase58(),
+        },
+      },
+      {
+        dataSize: MarginAccountLayout.span,
+      },
+    ];
+
+    const response = await getFilteredProgramAccounts(connection, programId, filters);
+    const decoded = response.map(a => [a.publicKey, MarginAccountLayout.decode(a.accountInfo.data)]);
+
+    console.log('MarginAccounts decoded', decoded);
+
+    setMarginAccounts(decoded);
+  }
+
+  const [openOrdersAccounts, setOpenOrdersAccounts] = useState(undefined);
+
+  async function fetchOpenOrdersAccounts() {
+    if (!wallet.publicKey || !connection || !connected) {
+      console.error('ensure wallet is connected', wallet, connection, connected);
+      return
+    }
+
+    console.log('Fetch mango OpenOrdersAccounts for', wallet.publicKey.toString());
+
+
+    const programId = new PublicKey(config.dex_program_id);
+    const filters = [
+      /*{
+        memcmp: {
+          offset: OpenOrdersLayout.offsetOf('owner'),
+          bytes: wallet.publicKey.toBase58(),
+        },
+      },*/
+      {
+        dataSize: OpenOrdersLayout.span,
+      },
+    ];
+
+    const response = await getFilteredProgramAccounts(connection, programId, filters);
+    console.log('OpenOrdersAccounts fetched', response);
+
+
+    const decoded = response.map(a => [a.publicKey, a.accountInfo.owner, OpenOrdersLayout.decode(a.accountInfo.data)]);
+
+    console.log('OpenOrdersAccounts decoded', decoded);
+
+    setOpenOrdersAccounts(decoded);
+  }
 
   async function initMarginAccount() {
     const dex_program_id = new PublicKey(config.dex_program_id);
@@ -104,7 +194,9 @@ function App() {
     const spot_market_pks = mango_group_config.spot_market_pks.map( pk => new PublicKey(pk) );
 
     // create instructions
+    console.log('create MarginAccount', MarginAccountLayout.span);
     const mango_account = await createAccountInstruction(MarginAccountLayout.span, mango_program_id);
+    console.log('create OpenOrders', OpenOrdersLayout.span);
     const open_orders = await Promise.all(spot_market_pks.map(_ => createAccountInstruction(OpenOrdersLayout.span, dex_program_id)));
 
     console.log('dex_program_id', dex_program_id.toString());
@@ -149,6 +241,14 @@ function App() {
     setNetwork(e.target.value);
   }
 
+  function renderAccount(a) {
+    return (
+      <>
+        {a[0].toString()}: {a[1].toString()}
+        <br />
+      </> );
+  }
+
   return (
     <div className="App">
       <header className="navbar is-fixed-top is-spaced">
@@ -169,16 +269,41 @@ function App() {
       </header>
       <main>
         <div className="box">
-          <button className="button" disabled={!connected} onClick={fetchAccounts}>
+          <button className="button" disabled={!connected} onClick={fetchSPLAccounts}>
              Fetch SPL Accounts
           </button>
           <p>
             Needs to be connected: { connected ? "✅" : "❌" }
           </p>
           <pre>
-            { accounts.map( (a) => <>{a[0]}: {a[1]}<br /></> ) }
+            { accounts.map( renderAccount ) }
           </pre>
         </div>
+
+        <div className="box">
+          <button className="button" disabled={!connected} onClick={fetchMarginAccounts}>
+             Fetch Margin Accounts
+          </button>
+          <p>
+            Needs to be connected: { connected ? "✅" : "❌" }
+          </p>
+          <pre>
+            { marginAccounts && marginAccounts.map( renderAccount ) }
+          </pre>
+        </div>
+
+        <div className="box">
+          <button className="button" disabled={!connected} onClick={fetchOpenOrdersAccounts}>
+             Fetch Open Orders Accounts
+          </button>
+          <p>
+            Needs to be connected: { connected ? "✅" : "❌" }
+          </p>
+          <pre>
+            { openOrdersAccounts && openOrdersAccounts.map( renderAccount ) }
+          </pre>
+        </div>
+
 
         <div className="box">
           <button className="button" disabled={!connected} onClick={initMarginAccount}>
@@ -187,7 +312,6 @@ function App() {
           <p>
             Needs to be connected: { connected ? "✅" : "❌" }
           </p>
-
         </div>
 
         <div className="box">
