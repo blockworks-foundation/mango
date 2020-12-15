@@ -293,7 +293,6 @@ impl Processor {
         let mut prices = [U64F64::from_num(0); NUM_TOKENS];
         prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
 
-
         for i in 0..NUM_MARKETS {
             let spot_market_acc = &spot_market_accs[i];
             prog_assert_eq!(&mango_group.spot_markets[i], spot_market_acc.key)?;

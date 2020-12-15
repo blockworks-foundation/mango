@@ -36,7 +36,7 @@ cd cli
 
 CLUSTER=devnet
 KEYPAIR=~/.config/solana/id.json
-IDS_PATH=../common/ids.json
+IDS_PATH=../web/src/ids.json
 TOKENS="BTC ETH USDC"
 MANGO_GROUP_NAME=BTC_ETH_USDC
 TOKEN=USDC
