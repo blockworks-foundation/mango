@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use solana_program::instruction::{Instruction, AccountMeta};
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
+use fixed::types::U64F64;
 
 
 #[repr(C)]
@@ -27,7 +28,9 @@ pub enum MangoInstruction {
     /// 5+2*NUM_TOKENS..5+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
     InitMangoGroup {
-        signer_nonce: u64
+        signer_nonce: u64,
+        maint_coll_ratio: U64F64,
+        init_coll_ratio: U64F64
     },
 
     /// Initialize a margin account for a user
@@ -97,9 +100,16 @@ impl MangoInstruction {
         let discrim = u32::from_le_bytes(discrim);
         Some(match discrim {
             0 => {
-                let signer_nonce = array_ref![data, 0, 8];
+                let data = array_ref![data, 0, 40];
+                let (
+                    signer_nonce,
+                    maint_coll_ratio,
+                    init_coll_ratio
+                ) = array_refs![data, 8, 16, 16];
                 MangoInstruction::InitMangoGroup {
-                    signer_nonce: u64::from_le_bytes(*signer_nonce)
+                    signer_nonce: u64::from_le_bytes(*signer_nonce),
+                    maint_coll_ratio: U64F64::from_le_bytes(*maint_coll_ratio),
+                    init_coll_ratio: U64F64::from_le_bytes(*init_coll_ratio)
                 }
             }
             1 => {
@@ -131,6 +141,8 @@ pub fn init_mango_group(
     vault_pks: &[Pubkey],
     spot_market_pks: &[Pubkey],
     signer_nonce: u64,
+    maint_coll_ratio: U64F64,
+    init_coll_ratio: U64F64
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
@@ -149,7 +161,7 @@ pub fn init_mango_group(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::InitMangoGroup { signer_nonce };
+    let instr = MangoInstruction::InitMangoGroup { signer_nonce, maint_coll_ratio, init_coll_ratio };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,

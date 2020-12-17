@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use std::fs::File;
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_sdk::program_pack::Pack;
-
+use fixed::types::U64F64;
 
 #[derive(Clap, Debug)]
 pub struct Opts {
@@ -144,7 +144,9 @@ pub fn start(opts: Opts) -> Result<()> {
                 mint_pks.as_slice(),
                 vault_pks.as_slice(),
                 spot_market_pks.as_slice(),
-                signer_nonce
+                signer_nonce,
+                U64F64::from_num(1.1),
+                U64F64::from_num(1.2)
             )?;
             let instructions = vec![instruction];
             let signers = vec![&payer];

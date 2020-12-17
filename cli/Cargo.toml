@@ -22,3 +22,4 @@ serde_json = "*"
 chrono = "*"
 common = { version = "*", path = "../common" }
 serum_dex = { version = "*", git = "https://github.com/project-serum/serum-dex.git", features=["no-entrypoint", "client"] }
+fixed = { version = "=0.5.7" }

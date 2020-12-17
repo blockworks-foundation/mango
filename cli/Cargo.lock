@@ -427,6 +427,7 @@ dependencies = [
  "chrono",
  "clap 3.0.0-beta.2",
  "common",
+ "fixed",
  "mango",
  "serde_json",
  "serum_dex",
@@ -1000,6 +1001,7 @@ version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f32ca1abdbb21d63a3e02a658a9e3001b172f13c8b46724299e21190c5ee5041"
 dependencies = [
+ "serde",
  "typenum",
 ]
 
