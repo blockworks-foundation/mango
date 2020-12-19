@@ -41,7 +41,7 @@ impl FromStr for Cluster {
             "l" | "localnet" => Ok(Cluster::Localnet),
             "g" | "debug" => Ok(Cluster::Debug),
             _ => Err(anyhow::Error::msg(
-                "Cluster must be one of [testnet, mainnet, devnet]\n",
+                "Cluster must be one of [testnet, mainnet, devnet, localnet]\n",
             )),
         }
     }

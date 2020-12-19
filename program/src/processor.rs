@@ -462,12 +462,12 @@ impl Processor {
                 Self::withdraw(program_id, accounts, quantity)?;
             }
             MangoInstruction::Liquidate {
-
+                deposit_quantities
             } => {
                 // Either user takes the position
                 // Or the program can liquidate on the serum dex (in case no liquidator wants to take pos)
-                msg!("Liquidate")
-
+                msg!("Liquidate");
+                Self::liquidate(program_id, accounts, deposit_quantities)?;
             }
             MangoInstruction::PlaceOrder => {
 

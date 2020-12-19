@@ -4,6 +4,8 @@ use solana_program::instruction::{Instruction, AccountMeta};
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 use fixed::types::U64F64;
+use crate::state::NUM_TOKENS;
+use bytemuck::cast_slice;
 
 
 #[repr(C)]
@@ -84,7 +86,9 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    Liquidate,
+    Liquidate {
+        deposit_quantities: [u64; NUM_TOKENS]
+    },
 
     // Proxy instructions to Dex
     PlaceOrder,
@@ -122,6 +126,14 @@ impl MangoInstruction {
             3 => {
                 let quantity = array_ref![data, 0, 8];
                 MangoInstruction::Withdraw { quantity: u64::from_le_bytes(*quantity) }
+            },
+            4 => {
+                if data.len() < 24 { return None; }
+                let qslice: &[u64] = cast_slice(data);
+                let deposit_quantities = array_ref![qslice, 0, NUM_TOKENS];
+                MangoInstruction::Liquidate {
+                    deposit_quantities: *deposit_quantities
+                }
             }
             _ => { return None; }
         })
@@ -272,4 +284,8 @@ pub fn withdraw(
         accounts,
         data
     })
+}
+
+pub fn liquidate() {
+
 }

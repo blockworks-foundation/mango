@@ -113,6 +113,7 @@ impl MangoGroup {
 
         Ok(mango_group)
     }
+    #[allow(dead_code)]
     fn load_checked<'a>(
         account: &'a AccountInfo,
         program_id: &Pubkey
