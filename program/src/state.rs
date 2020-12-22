@@ -175,6 +175,9 @@ impl MangoGroup {
         let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
         native.checked_floor().unwrap().to_num()  // rounds toward -inf
     }
+    pub fn get_market_index(&self, spot_market_pk: &Pubkey) -> Option<usize> {
+        self.spot_markets.iter().position(|market| market == spot_market_pk)
+    }
 }
 
 

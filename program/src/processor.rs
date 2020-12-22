@@ -506,6 +506,7 @@ impl Processor {
     }
 
     // Transfer funds from open orders into the MangoGroup vaults; increment MarginAccount.positions
+    #[inline(never)]
     fn settle_funds(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -598,6 +599,63 @@ impl Processor {
             margin_account.positions[i] += pre_base - post_base;
             margin_account.positions[NUM_MARKETS] += pre_quote - post_quote;
         }
+
+        Ok(())
+    }
+
+    fn cancel_order(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        data: Vec<u8>
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 9;
+        let accounts = array_ref![accounts, 0, NUM_FIXED];
+
+        let [
+            mango_group_acc,
+            owner_acc,  // signer
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            spot_market_acc,
+            open_orders_acc,
+            dex_request_queue_acc,
+            signer_acc,
+        ] = accounts;
+
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let margin_account = MarginAccount::load_checked(
+            margin_account_acc,
+            mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        prog_assert!(owner_acc.is_signer)?;
+        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        let market_i = mango_group.get_market_index(spot_market_acc.key).unwrap();
+        prog_assert_eq!(&margin_account.open_orders[market_i], open_orders_acc.key)?;
+
+        let instruction = Instruction {
+            program_id: *dex_prog_acc.key,
+            data,
+            accounts: vec![
+                AccountMeta::new_readonly(*spot_market_acc.key, false),
+                AccountMeta::new(*open_orders_acc.key, false),
+                AccountMeta::new(*dex_request_queue_acc.key, false),
+                AccountMeta::new_readonly(*signer_acc.key, true),
+            ],
+        };
+
+        let account_infos = [
+            dex_prog_acc.clone(),
+            spot_market_acc.clone(),
+            open_orders_acc.clone(),
+            dex_request_queue_acc.clone(),
+            signer_acc.clone()
+        ];
+        let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+        solana_program::program::invoke_signed(&instruction, &account_infos, &[&signer_seeds])?;
 
         Ok(())
     }
@@ -704,11 +762,18 @@ impl Processor {
                 Self::settle_funds(program_id, accounts)?;
 
             }
-            MangoInstruction::CancelOrder => {
-
+            MangoInstruction::CancelOrder {
+                instruction
+            } => {
+                msg!("CancelOrder");
+                let data =  serum_dex::instruction::MarketInstruction::CancelOrder(instruction).pack();
+                Self::cancel_order(program_id, accounts, data)?;
             }
-            MangoInstruction::CancelOrderByClientId => {
-
+            MangoInstruction::CancelOrderByClientId {
+                client_id
+            } => {
+                msg!("CancelOrderByClientId");
+                Self::cancel_order(program_id, accounts, client_id.to_le_bytes().to_vec())?;
             }
         }
         Ok(())

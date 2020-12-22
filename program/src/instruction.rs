@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::num::NonZeroU64;
 
 use arrayref::{array_ref, array_refs};
-use bytemuck::cast_slice;
+use bytemuck::{cast_slice, cast};
 use fixed::types::U64F64;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -100,8 +100,12 @@ pub enum MangoInstruction {
         order: serum_dex::instruction::NewOrderInstructionV2
     },
     SettleFunds,
-    CancelOrder,
-    CancelOrderByClientId,
+    CancelOrder {
+        instruction: serum_dex::instruction::CancelOrderInstruction
+    },
+    CancelOrderByClientId {
+        client_id: u64
+    },
 }
 
 
@@ -156,6 +160,38 @@ impl MangoInstruction {
                     order
                 }
             },
+            6 => {
+                MangoInstruction::SettleFunds
+            },
+            7 => {
+                let data_array = array_ref![data, 0, 53];
+                let fields = array_refs![data_array, 4, 16, 32, 1];
+                let side = match u32::from_le_bytes(*fields.0) {
+                    0 => serum_dex::matching::Side::Bid,
+                    1 => serum_dex::matching::Side::Ask,
+                    _ => return None,
+                };
+                let order_id = u128::from_le_bytes(*fields.1);
+                let owner = cast(*fields.2);
+                let &[owner_slot] = fields.3;
+                let instruction = serum_dex::instruction::CancelOrderInstruction {
+                    side,
+                    order_id,
+                    owner,
+                    owner_slot,
+                };
+
+                MangoInstruction::CancelOrder {
+                    instruction
+                }
+            },
+            8 => {
+                let client_id = array_ref![data, 0, 8];
+                MangoInstruction::CancelOrderByClientId {
+                    client_id: u64::from_le_bytes(*client_id)
+                }
+
+            }
             _ => { return None; }
         })
     }
