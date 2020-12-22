@@ -1,12 +1,16 @@
+use std::convert::TryInto;
+use std::num::NonZeroU64;
+
 use arrayref::{array_ref, array_refs};
+use bytemuck::cast_slice;
+use fixed::types::U64F64;
+use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
-use solana_program::instruction::{Instruction, AccountMeta};
+use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
-use fixed::types::U64F64;
-use crate::state::NUM_TOKENS;
-use bytemuck::cast_slice;
 
+use crate::state::NUM_TOKENS;
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -91,7 +95,10 @@ pub enum MangoInstruction {
     },
 
     // Proxy instructions to Dex
-    PlaceOrder,
+    PlaceOrder {
+        market_i: usize,
+        order: serum_dex::instruction::NewOrderInstructionV2
+    },
     SettleFunds,
     CancelOrder,
     CancelOrderByClientId,
@@ -134,13 +141,54 @@ impl MangoInstruction {
                 MangoInstruction::Liquidate {
                     deposit_quantities: *deposit_quantities
                 }
-            }
+            },
+            5 => {
+                let data_arr = array_ref![data, 0, 44];
+                let (market_i, v1_data_arr, v2_data_arr) = array_refs![data_arr, 8, 32, 4];
+
+                let v1_instr = unpack_dex_new_order_v1(v1_data_arr)?;
+                let self_trade_behavior = serum_dex::instruction::SelfTradeBehavior::try_from_primitive(
+                    u32::from_le_bytes(*v2_data_arr).try_into().ok()?,
+                ).ok()?;
+                let order = v1_instr.add_self_trade_behavior(self_trade_behavior);
+                MangoInstruction::PlaceOrder {
+                    market_i: usize::from_le_bytes(*market_i),
+                    order
+                }
+            },
             _ => { return None; }
         })
     }
     pub fn pack(&self) -> Vec<u8> {
         bincode::serialize(self).unwrap()
     }
+}
+
+
+fn unpack_dex_new_order_v1(data: &[u8; 32]) -> Option<serum_dex::instruction::NewOrderInstructionV1> {
+    let (&side_arr, &price_arr, &max_qty_arr, &otype_arr, &client_id_bytes) =
+        array_refs![data, 4, 8, 8, 4, 8];
+    let client_id = u64::from_le_bytes(client_id_bytes);
+    let side = match u32::from_le_bytes(side_arr) {
+        0 => serum_dex::matching::Side::Bid,
+        1 => serum_dex::matching::Side::Ask,
+        _ => return None,
+    };
+    let limit_price = NonZeroU64::new(u64::from_le_bytes(price_arr))?;
+    let max_qty = NonZeroU64::new(u64::from_le_bytes(max_qty_arr))?;
+    let order_type = match u32::from_le_bytes(otype_arr) {
+        0 => serum_dex::matching::OrderType::Limit,
+        1 => serum_dex::matching::OrderType::ImmediateOrCancel,
+        2 => serum_dex::matching::OrderType::PostOnly,
+        _ => return None,
+    };
+    Some(serum_dex::instruction::NewOrderInstructionV1 {
+        side,
+        limit_price,
+        max_qty,
+        order_type,
+        client_id,
+    })
 }
 
 

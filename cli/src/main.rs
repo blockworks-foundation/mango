@@ -16,6 +16,7 @@ use std::fs::File;
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_sdk::program_pack::Pack;
 use fixed::types::U64F64;
+use std::io::Write;
 
 #[derive(Clap, Debug)]
 pub struct Opts {
@@ -69,6 +70,12 @@ pub enum Command {
     ConvertAssertionError {
         #[clap(long, short)]
         code: u32,
+    },
+    PrintBs58 {
+        #[clap(long, short)]
+        keypair: String,
+        #[clap(long, short)]
+        filepath: String,
     }
 }
 
@@ -178,6 +185,7 @@ pub fn start(opts: Opts) -> Result<()> {
             ids_path,
             mango_group_name
         } => {
+
             println!("InitMarginAccount");
             let payer = read_keypair_file(payer.as_str())?;
             let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
@@ -285,8 +293,6 @@ pub fn start(opts: Opts) -> Result<()> {
             let margin_account = MarginAccount::load_from_bytes(margin_account_acc.data.as_slice())?;
             let mval: u64 = margin_account.deposits[token_index].to_num();
             println!("{}", mval);
-
-
         }
         Command::Withdraw { .. } => {}
         Command::ConvertAssertionError {
@@ -297,7 +303,16 @@ pub fn start(opts: Opts) -> Result<()> {
             println!("file {} line {}", file_id, line);
         }
 
+        Command::PrintBs58 {
+            keypair,
+            filepath
+        } => {
 
+            let keypair = read_keypair_file(keypair.as_str())?;
+            let mut f = File::create(filepath.as_str()).unwrap();
+            write!(&mut f, "{}", keypair.to_base58_string())?;
+            // println!("{}", keypair.to_base58_string())
+        }
     }
     Ok(())
 }

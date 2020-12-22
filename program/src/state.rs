@@ -33,7 +33,6 @@ macro_rules! prog_assert_eq {
     }
 }
 
-
 pub trait Loadable: Pod {
     fn load_mut<'a>(account: &'a AccountInfo) -> Result<RefMut<'a, Self>, ProgramError> {
         Ok(RefMut::map(account.try_borrow_mut_data()?, |data| from_bytes_mut(data)))
@@ -165,6 +164,16 @@ impl MangoGroup {
 
         }
         Ok(())
+    }
+
+    pub fn get_total_borrows_native(&self, token_i: usize) -> u64 {
+        let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
+
+        native.checked_ceil().unwrap().to_num()  // rounds toward +inf
+    }
+    pub fn get_total_deposits_native(&self, token_i: usize) -> u64 {
+        let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
+        native.checked_floor().unwrap().to_num()  // rounds toward -inf
     }
 }
 
@@ -447,7 +456,9 @@ pub fn load_asks_mut<'a>(
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
-pub fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
+pub fn load_open_orders<'a>(
+    acc: &'a AccountInfo
+) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
 
