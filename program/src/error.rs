@@ -72,13 +72,13 @@ impl From<DexError> for MangoError {
 }
 
 #[inline]
-pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> Result<(), AssertionError> {
+pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> MangoResult<()> {
     if cond {
         Ok(())
     } else {
-        Err(AssertionError {
+        Err(MangoError::AssertionError(AssertionError {
             line,
             file_id
-        })
+        }))
     }
 }
