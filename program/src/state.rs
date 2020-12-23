@@ -12,12 +12,11 @@ use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-use crate::error::{check_assert, SourceFileId, MangoResult};
+use crate::error::{check_assert, MangoResult, SourceFileId};
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
-pub const MAX_LEVERAGE: u64 = 5;
 pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
@@ -33,7 +32,6 @@ macro_rules! prog_assert_eq {
         check_assert($x == $y, line!() as u16, SourceFileId::State)
     }
 }
-
 
 pub trait Loadable: Pod {
     fn load_mut<'a>(account: &'a AccountInfo) -> Result<RefMut<'a, Self>, ProgramError> {
@@ -93,11 +91,40 @@ pub struct MangoGroup {
 
     // denominated in Mango index adjusted terms
     pub total_deposits: [U64F64; NUM_TOKENS],
-    pub total_borrows: [U64F64; NUM_TOKENS]
+    pub total_borrows: [U64F64; NUM_TOKENS],
+
+    pub maint_coll_ratio: U64F64,  // 1.10
+    pub init_coll_ratio: U64F64  //  1.20
 }
 impl_loadable!(MangoGroup);
 
 impl MangoGroup {
+    pub fn load_mut_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey
+    ) -> MangoResult<RefMut<'a, Self>> {
+
+        prog_assert_eq!(account.data_len(), size_of::<Self>())?;
+        prog_assert_eq!(account.owner, program_id)?;
+
+        let mango_group = Self::load_mut(account)?;
+        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+
+        Ok(mango_group)
+    }
+    #[allow(dead_code)]
+    fn load_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey
+    ) -> MangoResult<Ref<'a, Self>> {
+        prog_assert_eq!(account.data_len(), size_of::<Self>())?;
+        prog_assert_eq!(account.owner, program_id)?;
+
+        let mango_group = Self::load(account)?;
+        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+
+        Ok(mango_group)
+    }
     pub fn get_token_index(&self, mint_pk: &Pubkey) -> Option<usize> {
         self.tokens.iter().position(|token| token == mint_pk)
     }
@@ -138,6 +165,18 @@ impl MangoGroup {
         }
         Ok(())
     }
+
+    pub fn get_total_borrows_native(&self, token_i: usize) -> u64 {
+        let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
+        native.checked_ceil().unwrap().to_num()  // rounds toward +inf
+    }
+    pub fn get_total_deposits_native(&self, token_i: usize) -> u64 {
+        let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
+        native.checked_floor().unwrap().to_num()  // rounds toward -inf
+    }
+    pub fn get_market_index(&self, spot_market_pk: &Pubkey) -> Option<usize> {
+        self.spot_markets.iter().position(|market| market == spot_market_pk)
+    }
 }
 
 
@@ -163,28 +202,93 @@ pub struct MarginAccount {
 impl_loadable!(MarginAccount);
 
 impl MarginAccount {
+    pub fn load_mut_checked<'a>(
+        account: &'a AccountInfo,
+        mango_group_pk: &Pubkey
+    ) -> MangoResult<RefMut<'a, Self>> {
+        prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
+
+        let margin_account = Self::load_mut(account)?;
+        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        // prog_assert_eq!(&margin_account.owner, owner_pk)?; // not necessary
+        prog_assert_eq!(&margin_account.mango_group, mango_group_pk)?;
+
+        Ok(margin_account)
+    }
+    pub fn load_checked<'a>(
+        account: &'a AccountInfo,
+        mango_group_pk: &Pubkey
+    ) -> MangoResult<Ref<'a, Self>> {
+        prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
+
+        let margin_account = Self::load(account)?;
+        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        // prog_assert_eq!(&margin_account.owner, owner_pk)?;  // not necessary
+        prog_assert_eq!(&margin_account.mango_group, mango_group_pk)?;
+
+        Ok(margin_account)
+    }
+    pub fn get_equity(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
+        // TODO weight collateral differently
+        // equity = val(deposits) + val(positions) + val(open_orders) - val(borrows)
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+        if liabs > assets {
+            msg!("This account should be liquidated!");
+            Ok(U64F64::from_num(0))
+        } else {
+            Ok(assets - liabs)
+        }
+    }
     pub fn get_free_equity(
         &self,
         mango_group: &MangoGroup,
         prices: &[U64F64; NUM_TOKENS],
         open_orders_accs: &[AccountInfo; NUM_MARKETS]
-    ) -> Result<U64F64, ProgramError> {
+    ) -> MangoResult<U64F64> {
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        if liabs > assets {
+            msg!("This account should be liquidated!");
+            Ok(U64F64::from_num(0))
+        } else {
+            let locked_assets = liabs * mango_group.init_coll_ratio;
+            if assets < locked_assets {
+                Ok(U64F64::from_num(0))
+            } else {
+                Ok(assets - locked_assets)
+            }
+        }
+    }
+    pub fn get_collateral_ratio(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
+        // assets / liabs
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+        if liabs == U64F64::from_num(0) {
+            Ok(U64F64::MAX)
+        } else {
+            Ok(assets / liabs)
+        }
+    }
+    pub fn get_assets_val(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
         // TODO weight collateral differently
-
+        // equity = val(deposits) + val(positions) + val(open_orders) - val(borrows)
         let mut assets: U64F64 = U64F64::from_num(0);
-        let mut liabs: U64F64 = U64F64::from_num(0);
-
-        /*
-            Determine quote currency value of deposits
-            Determine quote currency value of borrows
-            Determine value of positions
-            Add back value locked in open_orders
-
-            equity = val(deposits) - val(borrows) + val(positions) + val(open_orders)
-
-         */
-
-
         for i in 0..NUM_MARKETS {
             // TODO check open orders details
             let open_orders = load_open_orders(&open_orders_accs[i])?;
@@ -194,25 +298,25 @@ impl MarginAccount {
         for i in 0..NUM_TOKENS {
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_deposits = index.deposit * self.deposits[i];
-            let native_borrows = index.borrow * self.borrows[i];
-
             assets += (native_deposits + U64F64::from_num(self.positions[i])) * prices[i];
+        }
+        Ok(assets)
+
+    }
+    pub fn get_liabs_val(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+    ) -> MangoResult<U64F64> {
+        let mut liabs: U64F64 = U64F64::from_num(0);
+        for i in 0..NUM_TOKENS {
+            let index: &MangoIndex = &mango_group.indexes[i];
+            let native_borrows = index.borrow * self.borrows[i];
             liabs += native_borrows * prices[i];
         }
-
-        if liabs > assets {
-            msg!("This account should be liquidated!");
-            Ok(U64F64::from_num(0))
-        } else {
-            let locked_equity = liabs / U64F64::from_num(MAX_LEVERAGE);
-            let equity = assets - liabs;
-            if equity < locked_equity {
-                Ok(U64F64::from_num(0))
-            } else {
-                Ok(equity - locked_equity)
-            }
-        }
+        Ok(liabs)
     }
+
 }
 
 
@@ -354,7 +458,9 @@ pub fn load_asks_mut<'a>(
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
-pub fn load_open_orders<'a>(acc: &'a AccountInfo) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
+pub fn load_open_orders<'a>(
+    acc: &'a AccountInfo
+) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
 

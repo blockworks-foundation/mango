@@ -1,9 +1,8 @@
 use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
 use num_enum::IntoPrimitive;
 use solana_program::program_error::ProgramError;
-use static_assertions::_core::fmt::Formatter;
 use thiserror::Error;
 use serum_dex::error::DexError;
 
@@ -73,13 +72,13 @@ impl From<DexError> for MangoError {
 }
 
 #[inline]
-pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> Result<(), AssertionError> {
+pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> MangoResult<()> {
     if cond {
         Ok(())
     } else {
-        Err(AssertionError {
+        Err(MangoError::AssertionError(AssertionError {
             line,
             file_id
-        })
+        }))
     }
 }

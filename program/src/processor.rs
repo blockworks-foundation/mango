@@ -2,9 +2,11 @@ use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
 use fixed::types::U64F64;
+use serum_dex::matching::Side;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
+use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack};
@@ -36,7 +38,9 @@ impl Processor {
     fn init_mango_group(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
-        signer_nonce: u64
+        signer_nonce: u64,
+        maint_coll_ratio: U64F64,
+        init_coll_ratio: U64F64
     ) -> MangoResult<()> {
         const NUM_FIXED: usize = 5;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_TOKENS + NUM_MARKETS];
@@ -67,7 +71,8 @@ impl Processor {
         mango_group.dex_program_id = *dex_prog_acc.key;
         mango_group.total_deposits = [U64F64::from_num(0); NUM_TOKENS];
         mango_group.total_borrows = [U64F64::from_num(0); NUM_TOKENS];
-
+        mango_group.maint_coll_ratio = maint_coll_ratio;
+        mango_group.init_coll_ratio = init_coll_ratio;
         let curr_ts = clock.unix_timestamp as u64;
         for i in 0..NUM_TOKENS {
             let mint_acc = &token_mint_accs[i];
@@ -165,7 +170,7 @@ impl Processor {
             token_prog_acc,
             clock_acc,
         ] = accounts;
-        prog_assert!(owner_acc.is_signer)?;
+        // prog_assert!(owner_acc.is_signer)?; // anyone can deposit, not just owner
 
         // TODO move this into load_mut_checked function
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
@@ -174,7 +179,7 @@ impl Processor {
 
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
         prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
-        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        // prog_assert_eq!(&margin_account.owner, owner_acc.key)?;  // this check not necessary here
         prog_assert_eq!(&margin_account.mango_group, mango_group_acc.key)?;
 
         let token_index = mango_group.get_token_index(mint_acc.key).unwrap();
@@ -227,17 +232,12 @@ impl Processor {
             token_prog_acc,
             clock_acc,
         ] = fixed_accs;
+
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut margin_account = MarginAccount::load_mut_checked(
+            margin_account_acc, mango_group_acc.key)?;
         prog_assert!(owner_acc.is_signer)?;
-
-        // TODO move this into load_mut_checked function
-        let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
-        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
-        prog_assert_eq!(mango_group_acc.owner, program_id)?;
-
-        let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
-        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
-        prog_assert_eq!(&margin_account.mango_group, mango_group_acc.key)?;
 
         for i in 0..NUM_MARKETS {
             // TODO if open orders initialized make sure it has proper owner else it's 0
@@ -283,6 +283,402 @@ impl Processor {
         Ok(())
     }
 
+    fn liquidate(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        deposit_quantities: [u64; NUM_TOKENS]
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 5;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS + 2 * NUM_TOKENS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            spot_market_accs,
+            bids_accs,
+            asks_accs,
+            vaults_accs,
+            liqor_token_account_accs
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS];
+
+        let [
+            mango_group_acc,
+            liqor_acc,
+            liqee_margin_account_acc,
+            token_prog_acc,
+            clock_acc
+        ] = fixed_accs;
+
+        // margin ratio = equity / val(borrowed)
+        // equity = val(positions) - val(borrowed) + val(collateral)
+        prog_assert!(liqor_acc.is_signer)?;
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut liqee_margin_account = MarginAccount::load_mut_checked(
+            liqee_margin_account_acc, mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        for i in 0..NUM_MARKETS {
+            // TODO if open orders initialized make sure it has proper owner else it's 0
+            // TODO what if user deletes open orders after initializing (it is owned by dex so only dex can delete)
+            prog_assert_eq!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
+        }
+
+        let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
+        let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
+        let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
+
+        prog_assert!(liabs_val > U64F64::from_num(0))?;
+        let collateral_ratio: U64F64 = assets_val / liabs_val;
+
+        // No liquidations if account above maint collateral ratio
+        prog_assert!(collateral_ratio < mango_group.maint_coll_ratio)?;
+
+        // Determine if the amount liqor's deposits can bring this account above init_coll_ratio
+        let mut new_deposits_val = U64F64::from_num(0);
+        for i in 0..NUM_TOKENS {
+            new_deposits_val += prices[i] * U64F64::from_num(deposit_quantities[i]);
+        }
+        prog_assert!((assets_val + new_deposits_val) / liabs_val >= mango_group.init_coll_ratio)?;
+
+        // Pull deposits from liqor's token wallets
+        for i in 0..NUM_TOKENS {
+            let quantity = deposit_quantities[i];
+            if quantity == 0 {
+                continue;
+            }
+
+            let vault_acc: &AccountInfo = &vaults_accs[i];
+            let token_account_acc: &AccountInfo = &liqor_token_account_accs[i];
+            let deposit_instruction = spl_token::instruction::transfer(
+                &spl_token::id(),
+                token_account_acc.key,
+                vault_acc.key,
+                &liqor_acc.key, &[], quantity
+            )?;
+            let deposit_accs = [
+                token_account_acc.clone(),
+                vault_acc.clone(),
+                liqor_acc.clone(),
+                token_prog_acc.clone()
+            ];
+
+            solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
+
+            let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[i].deposit;
+            liqee_margin_account.deposits[i] += deposit;
+            mango_group.total_deposits[i] += deposit;
+        }
+
+        // If all deposits are good, transfer ownership of margin account to liqor
+        liqee_margin_account.owner = *liqor_acc.key;
+
+        Ok(())
+    }
+
+    fn place_order(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        market_i: usize,
+        order: serum_dex::instruction::NewOrderInstructionV2
+    ) -> MangoResult<()> {
+
+        const NUM_FIXED: usize = 12;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            spot_market_accs,
+            bids_accs,
+            asks_accs,
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS];
+
+        let [
+            mango_group_acc,
+            owner_acc,
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            dex_request_queue_acc,
+            vault_acc,
+            signer_acc,
+            dex_base_acc,
+            dex_quote_acc,
+            token_prog_acc,
+            rent_acc,
+        ] = fixed_accs;
+
+        // margin ratio = equity / val(borrowed)
+        // equity = val(positions) - val(borrowed) + val(collateral)
+        prog_assert!(owner_acc.is_signer)?;
+
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut margin_account = MarginAccount::load_mut_checked(
+            margin_account_acc, mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        let spot_market = load_market_state(&spot_market_accs[market_i], &mango_group.dex_program_id)?;
+        let price = order.limit_price.get();
+        let base_lots = order.max_qty.get();
+        let quote_lots = price * base_lots;
+
+        let quote_total = quote_lots * spot_market.pc_lot_size;
+        let base_total = base_lots * spot_market.coin_lot_size;
+
+        // assume bid
+        let open_orders_account = load_open_orders(&open_orders_accs[market_i])?;
+        prog_assert_eq!(open_orders_accs[market_i].key, &margin_account.open_orders[market_i])?;
+
+        let quote_avail = open_orders_account.native_pc_free + margin_account.positions[NUM_MARKETS];
+        let base_avail = open_orders_account.native_coin_free + margin_account.positions[market_i];
+
+        // Todo make sure different order types are valid, assuming Limit right now
+
+        match order.side {
+            Side::Bid => {
+                // verify the vault is correct
+                prog_assert_eq!(&mango_group.vaults[NUM_MARKETS], vault_acc.key)?;
+                if quote_total > quote_avail {
+                    Self::borrow_unchecked(
+                        &mut mango_group,
+                        &mut margin_account,
+                        NUM_MARKETS,
+                        quote_total - quote_avail
+                    )?;
+                }
+            }
+            Side::Ask => {
+                prog_assert_eq!(&mango_group.vaults[market_i], vault_acc.key)?;
+                if base_total > base_avail {
+                    Self::borrow_unchecked(
+                        &mut mango_group,
+                        &mut margin_account,
+                        market_i,
+                        base_total - base_avail
+                    )?;
+                }
+            }
+        }
+
+        // Verify collateral ratio is good enough
+        let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
+        let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
+        prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
+        // TODO if collateral ratio not good, allow orders that reduce position; cancel orders that increase pos
+
+        // Send out the place order request in Serum dex
+        let data = serum_dex::instruction::MarketInstruction::NewOrderV2(order).pack();
+        let instruction = Instruction {
+            program_id: *dex_prog_acc.key,
+            data,
+            accounts: vec![
+                AccountMeta::new(*spot_market_accs[market_i].key, false),
+                AccountMeta::new(*open_orders_accs[market_i].key, false),
+                AccountMeta::new(*dex_request_queue_acc.key, false),
+                AccountMeta::new(*vault_acc.key, false),
+                AccountMeta::new_readonly(*signer_acc.key, true),
+                AccountMeta::new(*dex_base_acc.key, false),
+                AccountMeta::new(*dex_quote_acc.key, false),
+                AccountMeta::new(*token_prog_acc.key, false),
+                AccountMeta::new_readonly(*rent_acc.key, false),
+            ],
+        };
+        let account_infos = [
+            dex_prog_acc.clone(),  // Have to add account of the program id
+            spot_market_accs[market_i].clone(),
+            open_orders_accs[market_i].clone(),
+            dex_request_queue_acc.clone(),
+            vault_acc.clone(),
+            signer_acc.clone(),
+            dex_base_acc.clone(),
+            dex_quote_acc.clone(),
+            token_prog_acc.clone(),
+            rent_acc.clone(),
+        ];
+
+        let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+        solana_program::program::invoke_signed(&instruction, &account_infos, &[&signer_seeds])?;
+
+        Ok(())
+    }
+
+    // Transfer funds from open orders into the MangoGroup vaults; increment MarginAccount.positions
+    // TODO this function may need to be broken down
+    #[inline(never)]
+    fn settle_funds(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 8;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS + NUM_TOKENS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            spot_market_accs,
+            dex_base_accs,
+            dex_quote_accs,
+            vault_accs
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS];
+
+        let [
+            mango_group_acc,
+            owner_acc,  // signer
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            signer_acc,
+            dex_signer_acc,
+            token_prog_acc,
+        ] = fixed_accs;
+
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut margin_account = MarginAccount::load_mut_checked(
+            margin_account_acc,
+            mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        prog_assert!(owner_acc.is_signer)?;
+        prog_assert_eq!(owner_acc.key, &margin_account.owner)?;
+
+        for i in 0..NUM_MARKETS {
+            prog_assert_eq!(&margin_account.open_orders[i], open_orders_accs[i].key)?;
+
+            // find how much was in open orders before
+            let (pre_base, pre_quote) = {
+                let open_orders = load_open_orders(&open_orders_accs[i])?;
+                (open_orders.native_coin_free, open_orders.native_pc_free)
+            };
+
+            if pre_base == 0 && pre_quote == 0 {
+                continue;
+            }
+
+            let data = serum_dex::instruction::MarketInstruction::SettleFunds.pack();
+            let instruction = Instruction {
+                program_id: *dex_prog_acc.key,
+                data,
+                accounts: vec![
+                    AccountMeta::new(*spot_market_accs[i].key, false),
+                    AccountMeta::new(*open_orders_accs[i].key, false),
+                    AccountMeta::new_readonly(*signer_acc.key, true),
+                    AccountMeta::new(*dex_base_accs[i].key, false),
+                    AccountMeta::new(*dex_quote_accs[i].key, false),
+                    AccountMeta::new(*vault_accs[i].key, false),
+                    AccountMeta::new(*vault_accs[NUM_MARKETS].key, false),
+                    AccountMeta::new_readonly(*dex_signer_acc.key, false),
+                    AccountMeta::new_readonly(*token_prog_acc.key, false),
+                ],
+            };
+
+            let account_infos = [
+                dex_prog_acc.clone(),
+                spot_market_accs[i].clone(),
+                open_orders_accs[i].clone(),
+                signer_acc.clone(),
+                dex_base_accs[i].clone(),
+                dex_quote_accs[i].clone(),
+                vault_accs[i].clone(),
+                vault_accs[NUM_MARKETS].clone(),
+                dex_signer_acc.clone(),
+                token_prog_acc.clone()
+            ];
+            let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+            solana_program::program::invoke_signed(&instruction, &account_infos, &[&signer_seeds])?;
+
+            let (post_base, post_quote) = {
+                let open_orders = load_open_orders(&open_orders_accs[i])?;
+                (open_orders.native_coin_free, open_orders.native_pc_free)
+            };
+
+            prog_assert!(post_base <= pre_base)?;
+            prog_assert!(post_quote <= pre_quote)?;
+            margin_account.positions[i] += pre_base - post_base;
+            margin_account.positions[NUM_MARKETS] += pre_quote - post_quote;
+        }
+
+        Ok(())
+    }
+
+    fn cancel_order(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        data: Vec<u8>
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 9;
+        let accounts = array_ref![accounts, 0, NUM_FIXED];
+
+        let [
+            mango_group_acc,
+            owner_acc,  // signer
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            spot_market_acc,
+            open_orders_acc,
+            dex_request_queue_acc,
+            signer_acc,
+        ] = accounts;
+
+        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let margin_account = MarginAccount::load_checked(
+            margin_account_acc,
+            mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        prog_assert!(owner_acc.is_signer)?;
+        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        let market_i = mango_group.get_market_index(spot_market_acc.key).unwrap();
+        prog_assert_eq!(&margin_account.open_orders[market_i], open_orders_acc.key)?;
+
+        let instruction = Instruction {
+            program_id: *dex_prog_acc.key,
+            data,
+            accounts: vec![
+                AccountMeta::new_readonly(*spot_market_acc.key, false),
+                AccountMeta::new(*open_orders_acc.key, false),
+                AccountMeta::new(*dex_request_queue_acc.key, false),
+                AccountMeta::new_readonly(*signer_acc.key, true),
+            ],
+        };
+
+        let account_infos = [
+            dex_prog_acc.clone(),
+            spot_market_acc.clone(),
+            open_orders_acc.clone(),
+            dex_request_queue_acc.clone(),
+            signer_acc.clone()
+        ];
+        let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+        solana_program::program::invoke_signed(&instruction, &account_infos, &[&signer_seeds])?;
+
+        Ok(())
+    }
+
+    // Borrow without checking if there is enough collateral in the account
+    fn borrow_unchecked(
+        mango_group: &mut MangoGroup,
+        margin_account: &mut MarginAccount,
+        token_i: usize,
+        quantity: u64
+    ) -> MangoResult<()> {
+        let index: &MangoIndex = &mango_group.indexes[token_i];
+        let adj_quantity = U64F64::from_num(quantity) / index.borrow;  // TODO checked divide
+        margin_account.borrows[token_i] += adj_quantity;
+        margin_account.positions[token_i] += quantity;
+        mango_group.total_borrows[token_i] += adj_quantity;
+
+        // Make sure token deposits are more than borrows
+        let native_deposits = mango_group.get_total_deposits_native(NUM_MARKETS);
+        let native_borrows = mango_group.get_total_borrows_native(NUM_MARKETS);
+        prog_assert!(native_deposits >= native_borrows)
+    }
+
     fn get_prices(
         mango_group: &MangoGroup,
         spot_market_accs: &[AccountInfo],
@@ -325,10 +721,10 @@ impl Processor {
         let instruction = MangoInstruction::unpack(data).ok_or(ProgramError::InvalidInstructionData)?;
         match instruction {
             MangoInstruction::InitMangoGroup {
-                signer_nonce
+                signer_nonce, maint_coll_ratio, init_coll_ratio
             } => {
                 msg!("InitMangoGroup");
-                Self::init_mango_group(program_id, accounts, signer_nonce)?;
+                Self::init_mango_group(program_id, accounts, signer_nonce, maint_coll_ratio, init_coll_ratio)?;
             }
             MangoInstruction::InitMarginAccount => {
                 msg!("InitMarginAccount");
@@ -346,11 +742,37 @@ impl Processor {
                 msg!("Withdraw");
                 Self::withdraw(program_id, accounts, quantity)?;
             }
-            MangoInstruction::Liquidate => {}
-            MangoInstruction::PlaceOrder => {}
-            MangoInstruction::SettleFunds => {}
-            MangoInstruction::CancelOrder => {}
-            MangoInstruction::CancelOrderByClientId => {}
+            MangoInstruction::Liquidate {
+                deposit_quantities
+            } => {
+                // Either user takes the position
+                // Or the program can liquidate on the serum dex (in case no liquidator wants to take pos)
+                msg!("Liquidate");
+                Self::liquidate(program_id, accounts, deposit_quantities)?;
+            }
+            MangoInstruction::PlaceOrder {
+                market_i, order
+            } => {
+                msg!("PlaceOrder");
+                Self::place_order(program_id, accounts, market_i, order)?;
+            }
+            MangoInstruction::SettleFunds => {
+                msg!("SettleFunds");
+                Self::settle_funds(program_id, accounts)?;
+            }
+            MangoInstruction::CancelOrder {
+                instruction
+            } => {
+                msg!("CancelOrder");
+                let data =  serum_dex::instruction::MarketInstruction::CancelOrder(instruction).pack();
+                Self::cancel_order(program_id, accounts, data)?;
+            }
+            MangoInstruction::CancelOrderByClientId {
+                client_id
+            } => {
+                msg!("CancelOrderByClientId");
+                Self::cancel_order(program_id, accounts, client_id.to_le_bytes().to_vec())?;
+            }
         }
         Ok(())
     }
