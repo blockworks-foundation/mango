@@ -419,7 +419,6 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
-
         let spot_market = load_market_state(&spot_market_accs[market_i], &mango_group.dex_program_id)?;
         let price = order.limit_price.get();
         let base_lots = order.max_qty.get();
@@ -456,7 +455,7 @@ impl Processor {
                     Self::borrow_unchecked(
                         &mut mango_group,
                         &mut margin_account,
-                        NUM_MARKETS,
+                        market_i,
                         base_total - base_avail
                     )?;
                 }
@@ -506,6 +505,7 @@ impl Processor {
     }
 
     // Transfer funds from open orders into the MangoGroup vaults; increment MarginAccount.positions
+    // TODO this function may need to be broken down
     #[inline(never)]
     fn settle_funds(
         program_id: &Pubkey,
@@ -679,7 +679,6 @@ impl Processor {
         prog_assert!(native_deposits >= native_borrows)
     }
 
-
     fn get_prices(
         mango_group: &MangoGroup,
         spot_market_accs: &[AccountInfo],
@@ -760,7 +759,6 @@ impl Processor {
             MangoInstruction::SettleFunds => {
                 msg!("SettleFunds");
                 Self::settle_funds(program_id, accounts)?;
-
             }
             MangoInstruction::CancelOrder {
                 instruction

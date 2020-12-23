@@ -168,7 +168,6 @@ impl MangoGroup {
 
     pub fn get_total_borrows_native(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
-
         native.checked_ceil().unwrap().to_num()  // rounds toward +inf
     }
     pub fn get_total_deposits_native(&self, token_i: usize) -> u64 {

@@ -9,10 +9,21 @@ We want to enable margin trading on the Serum with a focus on usability. Towards
 3. Liquidity for borrowers on day 1
 4. Execution of all trades on Serum's spot markets (incl. liquidations)
 
-## Bond Market 💸
-
-The trader may issue bonds via Leverum given they deposit sufficient collateral in their margin account. The margin account is guarded by the Leverum program, which continuously calculates a fair valuation of the collateral and the debt taken on. The margin account can be accessed by the borrower to trade on Serum's regular spot markets, as well as by possible liquidators in a margin call scenario.
-
+## To Do
+1. Enforcer Bot
+    * Keep a list of margin accounts sorted by collateral ratio and check periodically if they need to be liquidated
+    * Put accounts into reduce only mode if they fall below init_collateral_ratio
+2. Trading client
+    * Similar to Serum dex client so market makers can easily switch to Mango margin
+3. User interface
+    * Add geo fence for prohibited jurisdictions
+    * Show historical earnings
+4. Smart contract
+    * comprehensive testing and audit
+    * Change oracle to chainlink
+    * Serum pooling incentive to reduce fees
+5. Liquidity
+    * Get USDC lenders
 
 ## Setup 🛠
 
