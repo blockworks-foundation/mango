@@ -22,6 +22,7 @@ We want to enable margin trading on the Serum with a focus on usability. Towards
     * comprehensive testing and audit
     * Change oracle to chainlink
     * Serum pooling incentive to reduce fees
+    * Instruction to close empty margin account
 5. Liquidity
     * Get USDC lenders
 

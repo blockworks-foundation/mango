@@ -1,6 +1,6 @@
 import BufferLayout from 'buffer-layout';
 
-const NUM_TOKENS = 3;
+export const NUM_TOKENS = 3;
 export const MarginAccountLayout = BufferLayout.struct([
   BufferLayout.nu64('account_flags'),
   BufferLayout.blob(32, 'mango_group'),

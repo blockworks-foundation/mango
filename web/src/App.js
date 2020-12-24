@@ -6,7 +6,7 @@ import Wallet from '@project-serum/sol-wallet-adapter';
 
 import AmountInput from './components/AmountInput';
 
-import { MarginAccountLayout, OpenOrdersLayout, encodeMangoInstruction } from './layouts';
+import { MarginAccountLayout, OpenOrdersLayout, encodeMangoInstruction, NUM_TOKENS } from './layouts';
 import ID from './ids.json';
 
 import './App.css';
@@ -123,6 +123,48 @@ function App() {
 
   const [marginAccounts, setMarginAccounts] = useState(undefined);
 
+  // async function fetchMangoGroup() {
+  //   if (!wallet.publicKey || !connection || !connected) {
+  //     console.error('ensure wallet is connected', wallet, connection, connected);
+  //     return
+  //   }
+  //
+  //   const programId = new PublicKey(config.mango_program_id);
+  //   const filters = [
+  //     {
+  //       memcmp: {
+  //         offset: MarginAccountLayout.offsetOf('owner'),
+  //         bytes: wallet.publicKey.toBase58(),
+  //       },
+  //     },
+  //     {
+  //       dataSize: MarginAccountLayout.span,
+  //     },
+  //   ];
+  //
+  //   const response = await getFilteredProgramAccounts(connection, programId, filters);
+  //   const decoded = response.map(a => [a.publicKey, MarginAccountLayout.decode(a.accountInfo.data)]);
+  //
+  //   console.log('MarginAccounts decoded', decoded);
+  //
+  //   setMarginAccounts(decoded);
+  // }
+
+
+  function u64f64BytesToFloat(bytes) {
+    if (bytes.length !== 16) {
+      throw 'Not a valid u64f64 bytes representation';
+    }
+    let m = Math.pow(2, -64);
+
+    let fracBytes = bytes.slice(8);
+    let intBytes = bytes.slice(-8);
+    // eslint-disable-next-line no-undef
+    let n = new BigUint64Array(intBytes)[0];
+
+    console.log(fracBytes, intBytes, n);
+  }
+
   async function fetchMarginAccounts() {
     if (!wallet.publicKey || !connection || !connected) {
       console.error('ensure wallet is connected', wallet, connection, connected);
@@ -143,8 +185,13 @@ function App() {
     ];
 
     const response = await getFilteredProgramAccounts(connection, programId, filters);
+
     const decoded = response.map(a => [a.publicKey, MarginAccountLayout.decode(a.accountInfo.data)]);
 
+    let marginAccount = decoded[0][1];
+    for (let i = 0; i < NUM_TOKENS; i++) {
+      u64f64BytesToFloat(marginAccount.deposits.slice(i * 16, (i+1) * 16));
+    }
     console.log('MarginAccounts decoded', decoded);
 
     setMarginAccounts(decoded);
@@ -183,6 +230,16 @@ function App() {
     console.log('OpenOrdersAccounts decoded', decoded);
 
     setOpenOrdersAccounts(decoded);
+  }
+
+
+  async function getBalances() {
+    if (!wallet.publicKey || !connection || !connected) {
+      console.error('ensure wallet is connected', wallet, connection, connected);
+      return
+    }
+
+
   }
 
   async function initMarginAccount() {
