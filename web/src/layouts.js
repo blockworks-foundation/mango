@@ -1,6 +1,32 @@
 import BufferLayout from 'buffer-layout';
 
 export const NUM_TOKENS = 3;
+
+export const MangoIndexLayout = BufferLayout.struct([
+  BufferLayout.nu64('last_update'),
+  BufferLayout.blob(16, 'borrow'), // U64F64
+  BufferLayout.blob(16, 'deposit')  // U64F64
+]);
+
+export const MangoGroupLayout = BufferLayout.struct([
+  BufferLayout.nu64('account_flags'),
+  BufferLayout.blob(32 * NUM_TOKENS, 'tokens'),
+  BufferLayout.blob(32 * NUM_TOKENS, 'vaults'),
+  BufferLayout.blob(MangoIndexLayout.span * NUM_TOKENS, 'indexes'),
+  BufferLayout.blob(32 * (NUM_TOKENS-1), 'spot_markets'),
+  BufferLayout.nu64('signer_nonce'),
+    BufferLayout.blob(32, 'signer_key'),
+    BufferLayout.blob(32, 'dex_program_id'),
+
+    BufferLayout.blob(16 * NUM_TOKENS, 'total_deposits'),
+    BufferLayout.blob(16 * NUM_TOKENS, 'total_borrows'),
+    BufferLayout.blob(16, 'maint_coll_ratio'),
+    BufferLayout.blob(16, 'init_coll_ratio'),
+]);
+
+
+
+
 export const MarginAccountLayout = BufferLayout.struct([
   BufferLayout.nu64('account_flags'),
   BufferLayout.blob(32, 'mango_group'),

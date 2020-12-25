@@ -4,7 +4,7 @@ Make sure the ids.json file contains the symbols and program ids
 ```
 CLUSTER=devnet
 KEYPAIR=~/.config/solana/id.json
-IDS_PATH=../common/ids.json
+IDS_PATH=../web/src/ids.json
 TOKENS="BTC ETH USDC"
 cargo run -- $CLUSTER init-mango-group --payer $KEYPAIR --ids-path $IDS_PATH --tokens $TOKENS
 ```
@@ -17,7 +17,7 @@ cargo run -- $CLUSTER init-margin-account --payer $KEYPAIR --ids-path $IDS_PATH 
 
 ### Deposit
 ```
-MARGIN_ACCOUNT=8c1CGBvgbuxU7ARvBtV1646omZXx9HLsxHTfkppKwSBA
+MARGIN_ACCOUNT=EE6QQDGN7HZkUeSzCxU3PNbeB6batFXuGxw3thGiZ76W
 MANGO_GROUP_NAME=BTC_ETH_USDC
 TOKEN=BTC
 cargo run -- $CLUSTER deposit --payer $KEYPAIR --ids-path $IDS_PATH --mango-group-name $MANGO_GROUP_NAME --token-symbol $TOKEN --quantity 1.2 --margin-account $MARGIN_ACCOUNT

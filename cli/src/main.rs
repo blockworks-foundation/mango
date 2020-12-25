@@ -257,7 +257,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 TokenAccountsFilter::Mint(mint_pk),
                 CommitmentConfig::single_gossip()
             )?.value;
-
             assert!(token_accounts.len() > 0);
             // Take first token account
             let rka = &token_accounts[0];
