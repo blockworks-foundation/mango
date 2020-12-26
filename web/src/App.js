@@ -18,7 +18,12 @@ import ID from './ids.json';
 
 import './App.css';
 import {MINT_LAYOUT} from "@project-serum/swap";
+import * as util from "util";
 
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const YEAR = 365 * DAY;
 
 function App() {
 
@@ -205,7 +210,21 @@ function App() {
 
   function calculateInterest(nativeTotalDeposits, nativeTotalBorrows) {
     // interest function is not complete yet; returning 1% per year right now
-    return 0.01;
+    let optimalUtil = 0.7;
+    let optimalInterest = 0.10;
+    let maxInterest = 1;
+    if (nativeTotalDeposits < nativeTotalBorrows || nativeTotalDeposits === 0) {
+      return maxInterest;
+    }
+    let utilization = nativeTotalBorrows / nativeTotalDeposits;
+    if (utilization > optimalUtil) {
+      let extraUtil = utilization - optimalUtil;
+      let slope = (maxInterest - optimalInterest) / (1 - optimalUtil);
+      return optimalInterest + slope * extraUtil;
+    } else {
+      let slope = optimalInterest / optimalUtil;
+      return slope * utilization;
+    }
   }
 
   async function fetchMangoGroup() {

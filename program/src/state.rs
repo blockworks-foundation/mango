@@ -131,10 +131,25 @@ impl MangoGroup {
 
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
-        if self.total_borrows[token_index] == 0 {
-            U64F64::from_num(0)
+
+        let optimal_util = U64F64::from_num(0.7);
+        let optimal_r = U64F64::from_num(0.10) / U64F64::from_num(YEAR);  // opt 10%
+        let max_r = U64F64::from_num(1) / U64F64::from_num(YEAR);  // max 100%
+        let index: &MangoIndex = &self.indexes[token_index];
+        let native_deposits = index.deposit * self.total_deposits[token_index];
+        let native_borrows = index.borrow * self.total_borrows[token_index];
+        if native_deposits < native_borrows || native_deposits == 0 {
+            return max_r;  // kind of an error state
+        }
+        let utilization = native_borrows / native_deposits;
+
+        if utilization > optimal_util {
+            let extra_util = utilization - optimal_util;
+            let slope = (max_r - optimal_r) / (U64F64::from_num(1) - optimal_util);
+            optimal_r + slope * extra_util
         } else {
-            U64F64::from_num(0.01) / U64F64::from_num(YEAR)  // 1% interest per year
+            let slope = optimal_r / optimal_util;
+            slope * utilization
         }
     }
 
