@@ -17,7 +17,7 @@ use crate::state::NUM_TOKENS;
 pub enum MangoInstruction {
     /// Initialize a group of lending pools that can be cross margined
     ///
-    /// Accounts expected by this instruction (5 + 2 * NUM_TOKENS + NUM_MARKETS):
+    /// Accounts expected by this instruction (5 + 2 * NUM_TOKENS + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - the data account to store mango group state vars
     /// 1. `[]` rent_acc - Rent sysvar account
@@ -33,6 +33,8 @@ pub enum MangoInstruction {
     ///
     /// 5+2*NUM_TOKENS..5+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
+    /// 5+2*NUM_TOKENS+NUM_MARKETS..5+2*NUM_TOKENS+2*NUM_MARKETS `[]`
+    ///     oracle_accs - Solink Feed accounts corresponding to each trading pair
     InitMangoGroup {
         signer_nonce: u64,
         maint_coll_ratio: U64F64,
@@ -68,25 +70,46 @@ pub enum MangoInstruction {
 
     /// Withdraw funds that were deposited earlier.
     ///
-    /// Accounts expected by this instruction (9 + 4 * NUM_MARKETS):
+    /// Accounts expected by this instruction (8 + 2 * NUM_MARKETS + NUM_TOKENS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[writable]` margin_account_acc - the margin account for this user
     /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
-    /// 3. `[]` mint_acc - Mint of the token being withdrawn
-    /// 4. `[writable]` token_account_acc - TokenAccount owned by user which will be receiving the funds
-    /// 5. `[writable]` vault_acc - TokenAccount owned by MangoGroup which will be sending
-    /// 6. `[]` signer_acc - acc pointed to by signer_key
-    /// 7. `[]` token_prog_acc - acc pointed to by SPL token program id
-    /// 8. `[]` clock_acc - Clock sysvar account
-    /// 9..9+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
-    /// 9+NUM_MARKETS..9+2*NUM_MARKETS `[]`
-    ///     spot_market_accs - MarketState accounts for serum dex
-    /// 9+2*NUM_MARKETS..9+3*NUM_MARKETS `[]`
-    ///     bids_accs - The bids for each of the spot markets
-    /// 9+3*NUM_MARKETS..9+4*NUM_MARKETS `[]`
-    ///     asks_accs - The asks for each of the spot markets
+    /// 3. `[writable]` token_account_acc - TokenAccount owned by user which will be receiving the funds
+    /// 4. `[writable]` vault_acc - TokenAccount owned by MangoGroup which will be sending
+    /// 5. `[]` signer_acc - acc pointed to by signer_key
+    /// 6. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 7. `[]` clock_acc - Clock sysvar account
+    /// 8..8+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
+    /// 8+NUM_MARKETS..8+2*NUM_MARKETS `[]`
+    ///     oracle_accs - flux aggregator feed accounts
+    /// 9+2*NUM_MARKETS..9+2*NUM_MARKETS+NUM_TOKENS `[]`
+    ///     mint_accs - Mint account for each of the tokens
     Withdraw {
+        token_index: usize,
+        quantity: u64
+    },
+
+    /// Borrow by incrementing MarginAccount.borrows given collateral ratio is below init_coll_rat
+    ///
+    /// Accounts expected by this instruction (4 + 2 * NUM_MARKETS + NUM_TOKENS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[]` clock_acc - Clock sysvar account
+    /// 4..4+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
+    /// 4+NUM_MARKETS..4+2*NUM_MARKETS `[]`
+    ///     oracle_accs - flux aggregator feed accounts
+    /// 4+2*NUM_MARKETS..4+2*NUM_MARKETS+NUM_TOKENS `[]`
+    ///     mint_accs - Mint account for each of the tokens
+    Borrow {
+        token_index: usize,
+        quantity: u64
+    },
+
+    SettleBorrow {
+        token_index: usize,
         quantity: u64
     },
 
@@ -128,6 +151,7 @@ impl MangoInstruction {
                 }
             }
             1 => {
+
                 MangoInstruction::InitMarginAccount
             },
             2 => {
@@ -135,10 +159,33 @@ impl MangoInstruction {
                 MangoInstruction::Deposit { quantity: u64::from_le_bytes(*quantity) }
             },
             3 => {
-                let quantity = array_ref![data, 0, 8];
-                MangoInstruction::Withdraw { quantity: u64::from_le_bytes(*quantity) }
+                let data = array_ref![data, 0, 16];
+                let (token_index, quantity) = array_refs![data, 8, 8];
+
+                MangoInstruction::Withdraw {
+                    token_index: usize::from_le_bytes(*token_index),
+                    quantity: u64::from_le_bytes(*quantity)
+                }
             },
             4 => {
+                let data = array_ref![data, 0, 16];
+                let (token_index, quantity) = array_refs![data, 8, 8];
+
+                MangoInstruction::Borrow {
+                    token_index: usize::from_le_bytes(*token_index),
+                    quantity: u64::from_le_bytes(*quantity)
+                }
+            },
+            5 => {
+                let data = array_ref![data, 0, 16];
+                let (token_index, quantity) = array_refs![data, 8, 8];
+
+                MangoInstruction::SettleBorrow {
+                    token_index: usize::from_le_bytes(*token_index),
+                    quantity: u64::from_le_bytes(*quantity)
+                }
+            },
+            6 => {
                 if data.len() < 24 { return None; }
                 let qslice: &[u64] = cast_slice(data);
                 let deposit_quantities = array_ref![qslice, 0, NUM_TOKENS];
@@ -146,7 +193,7 @@ impl MangoInstruction {
                     deposit_quantities: *deposit_quantities
                 }
             },
-            5 => {
+            7 => {
                 let data_arr = array_ref![data, 0, 44];
                 let (market_i, v1_data_arr, v2_data_arr) = array_refs![data_arr, 8, 32, 4];
 
@@ -160,10 +207,10 @@ impl MangoInstruction {
                     order
                 }
             },
-            6 => {
+            8 => {
                 MangoInstruction::SettleFunds
             },
-            7 => {
+            9 => {
                 let data_array = array_ref![data, 0, 53];
                 let fields = array_refs![data_array, 4, 16, 32, 1];
                 let side = match u32::from_le_bytes(*fields.0) {
@@ -185,7 +232,7 @@ impl MangoInstruction {
                     instruction
                 }
             },
-            8 => {
+            10 => {
                 let client_id = array_ref![data, 0, 8];
                 MangoInstruction::CancelOrderByClientId {
                     client_id: u64::from_le_bytes(*client_id)
@@ -236,6 +283,7 @@ pub fn init_mango_group(
     mint_pks: &[Pubkey],
     vault_pks: &[Pubkey],
     spot_market_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
     signer_nonce: u64,
     maint_coll_ratio: U64F64,
     init_coll_ratio: U64F64
@@ -254,6 +302,9 @@ pub fn init_mango_group(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
     accounts.extend(spot_market_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(oracle_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
@@ -327,41 +378,74 @@ pub fn withdraw(
     mango_group_pk: &Pubkey,
     margin_account_pk: &Pubkey,
     owner_pk: &Pubkey,
-    mint_pk: &Pubkey,
     token_account_pk: &Pubkey,
     vault_pk: &Pubkey,
     signer_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
-    spot_market_pks: &[Pubkey],
-    bids_pks: &[Pubkey],
-    asks_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
+    mint_pks: &[Pubkey],
+    token_index: usize,
     quantity: u64
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
         AccountMeta::new(*margin_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
-        AccountMeta::new_readonly(*mint_pk, false),
         AccountMeta::new(*token_account_pk, false),
         AccountMeta::new(*vault_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
     ];
 
     accounts.extend(open_orders_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
-    accounts.extend(spot_market_pks.iter().map(
+    accounts.extend(oracle_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
-    accounts.extend(bids_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
-    accounts.extend(asks_pks.iter().map(
+    accounts.extend(mint_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::Withdraw { quantity };
+    let instr = MangoInstruction::Withdraw { token_index, quantity };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn borrow(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    open_orders_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
+    mint_pks: &[Pubkey],
+    token_index: usize,
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(oracle_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(mint_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+
+    let instr = MangoInstruction::Borrow { token_index, quantity };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,

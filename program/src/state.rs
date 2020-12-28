@@ -85,6 +85,7 @@ pub struct MangoGroup {
     pub vaults: [Pubkey; NUM_TOKENS],  // where funds are stored
     pub indexes: [MangoIndex; NUM_TOKENS],  // to keep track of interest
     pub spot_markets: [Pubkey; NUM_MARKETS],  // pubkeys to MarketState of serum dex
+    pub oracles: [Pubkey; NUM_MARKETS],  // oracles that give price of each base currency in quote currency
     pub signer_nonce: u64,
     pub signer_key: Pubkey,
     pub dex_program_id: Pubkey,  // serum dex program id
@@ -181,11 +182,14 @@ impl MangoGroup {
         Ok(())
     }
 
-    pub fn get_total_borrows_native(&self, token_i: usize) -> u64 {
+    pub fn has_valid_deposits_borrows(&self, token_i: usize) -> bool {
+        self.get_total_native_deposit(token_i) >= self.get_total_native_borrow(token_i)
+    }
+    pub fn get_total_native_borrow(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
         native.checked_ceil().unwrap().to_num()  // rounds toward +inf
     }
-    pub fn get_total_deposits_native(&self, token_i: usize) -> u64 {
+    pub fn get_total_native_deposit(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
         native.checked_floor().unwrap().to_num()  // rounds toward -inf
     }
@@ -330,6 +334,12 @@ impl MarginAccount {
             liabs += native_borrows * prices[i];
         }
         Ok(liabs)
+    }
+    pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
+        (self.borrows[token_i] * index.borrow).to_num()
+    }
+    pub fn get_native_deposit(&self, index: &MangoIndex, token_i: usize) -> u64 {
+        (self.deposits[token_i] * index.deposit).to_num()
     }
 
 }
@@ -478,6 +488,24 @@ pub fn load_open_orders<'a>(
 ) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
+
+pub fn check_open_orders(
+    acc: &AccountInfo,
+    owner: &Pubkey
+) -> MangoResult<()> {
+
+    let open_orders = load_open_orders(acc)?;
+    if open_orders.account_flags != 0 {
+        let valid_flags = (serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::OpenOrders).bits();
+        prog_assert_eq!(open_orders.account_flags, valid_flags)?;
+        let oos_owner = open_orders.owner;
+        prog_assert_eq!(oos_owner, owner.to_aligned_bytes())?;
+    }
+
+    Ok(())
+
+}
+
 
 pub fn load_market_state<'a>(
     market_account: &'a AccountInfo,
