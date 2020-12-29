@@ -353,9 +353,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 oracle_pks.push(get_pk(oracles, market_symbol.as_str()));
             }
 
-            let o = client.get_account(&oracle_pks[0])?;
-            println!("{} {:?}", o.executable, o.data.len());
-
             let mint_pks = get_vec_pks(&mango_group_ids["mint_pks"]);
             let token_index = tokens.iter().position(|t| *t == token_symbol.as_str()).unwrap();
             let mint_acc = client.get_account(&mint_pks[token_index])?;
@@ -376,7 +373,6 @@ pub fn start(opts: Opts) -> Result<()> {
             let instructions = vec![instruction];
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
-
 
         }
         Command::ConvertAssertionError {

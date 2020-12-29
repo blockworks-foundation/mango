@@ -16,8 +16,8 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoResult, SourceFileId, AssertionError};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, load_asks_mut, load_bids_mut, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, check_open_orders};
-use crate::utils::{gen_signer_key, gen_signer_seeds, get_dex_best_price};
+use crate::state::{AccountFlag, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, check_open_orders};
+use crate::utils::{gen_signer_key, gen_signer_seeds};
 use std::cmp;
 
 
@@ -272,7 +272,7 @@ impl Processor {
         prog_assert!(available >= quantity)?;
         // TODO just borrow (quantity - available)
 
-        let prices = Self::get_prices2(&mango_group, mint_accs, oracle_accs)?;
+        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
 
         // Withdraw from positions before withdrawing from deposits
         if position >= quantity {
@@ -338,35 +338,27 @@ impl Processor {
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
 
-        msg!("here0");
         for i in 0..NUM_MARKETS {
             prog_assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i])?;
             check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
         }
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
-        msg!("here1");
 
         let index: &MangoIndex = &mango_group.indexes[token_index];
         let adj_quantity = U64F64::from_num(quantity) / index.borrow;
-        msg!("here2");
 
         let position: u64 = margin_account.positions[token_index];
         margin_account.positions[token_index] = position.checked_add(quantity).ok_or(throw!())?;
-        msg!("here3");
 
         let borrow: U64F64 = margin_account.borrows[token_index];
         margin_account.borrows[token_index] = borrow.checked_add(adj_quantity).ok_or(throw!())?;
 
         let total_borrows: U64F64 = mango_group.total_borrows[token_index];
         mango_group.total_borrows[token_index] = total_borrows.checked_add(adj_quantity).ok_or(throw!())?;
-        msg!("here4");
 
-        let prices = Self::get_prices2(&mango_group, mint_accs, oracle_accs)?;
-        msg!("here5");
-
+        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        msg!("here6");
 
         prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(token_index))?;
@@ -449,16 +441,15 @@ impl Processor {
         deposit_quantities: [u64; NUM_TOKENS]
     ) -> MangoResult<()> {
         const NUM_FIXED: usize = 5;
-        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS + 2 * NUM_TOKENS];
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + 3 * NUM_TOKENS];
         let (
             fixed_accs,
             open_orders_accs,
-            spot_market_accs,
-            bids_accs,
-            asks_accs,
+            oracle_accs,
             vaults_accs,
-            liqor_token_account_accs
-        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS];
+            liqor_token_account_accs,
+            mint_accs
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS, NUM_TOKENS];
 
         let [
             mango_group_acc,
@@ -479,12 +470,11 @@ impl Processor {
         mango_group.update_indexes(&clock)?;
 
         for i in 0..NUM_MARKETS {
-            // TODO if open orders initialized make sure it has proper owner else it's 0
-            // TODO what if user deletes open orders after initializing (it is owned by dex so only dex can delete)
             prog_assert_eq!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
+            check_open_orders(&open_orders_accs[i], liqee_margin_account_acc.key)?;
         }
 
-        let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
+        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
         let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
         let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
 
@@ -543,14 +533,14 @@ impl Processor {
     ) -> MangoResult<()> {
 
         const NUM_FIXED: usize = 12;
-        let accounts = array_ref![accounts, 0, NUM_FIXED + 4 * NUM_MARKETS];
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 3 * NUM_MARKETS + NUM_TOKENS];
         let (
             fixed_accs,
             open_orders_accs,
             spot_market_accs,
-            bids_accs,
-            asks_accs,
-        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS];
+            oracle_accs,
+            mint_accs
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS];
 
         let [
             mango_group_acc,
@@ -621,7 +611,7 @@ impl Processor {
         }
 
         // Verify collateral ratio is good enough
-        let prices = Self::get_prices(&mango_group, spot_market_accs, bids_accs, asks_accs)?;
+        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
         prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
         // TODO if collateral ratio not good, allow orders that reduce position; cancel orders that increase pos
@@ -837,70 +827,27 @@ impl Processor {
 
     fn get_prices(
         mango_group: &MangoGroup,
-        spot_market_accs: &[AccountInfo],
-        bids_accs: &[AccountInfo],
-        asks_accs: &[AccountInfo]
-    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
-        // Determine prices from serum dex (TODO in the future use oracle)
-        let mut prices = [U64F64::from_num(0); NUM_TOKENS];
-        prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
-
-        for i in 0..NUM_MARKETS {
-            let spot_market_acc = &spot_market_accs[i];
-            prog_assert_eq!(&mango_group.spot_markets[i], spot_market_acc.key)?;
-            let spot_market = load_market_state(
-                spot_market_acc, &mango_group.dex_program_id
-            )?;
-
-            let bids = load_bids_mut(&spot_market, &bids_accs[i])?;
-            let asks = load_asks_mut(&spot_market, &asks_accs[i])?;
-
-            let bid_price = get_dex_best_price(bids, true);
-            let ask_price = get_dex_best_price(asks, false);
-
-            let lot_size_adj = U64F64::from_num(spot_market.pc_lot_size) / U64F64::from_num(spot_market.coin_lot_size);
-            prices[i] = match (bid_price, ask_price) {  // TODO better error
-                (None, None) => { panic!("No orders on the book!") },
-                (Some(b), None) => U64F64::from_num(b) * lot_size_adj,
-                (None, Some(a)) => U64F64::from_num(a) * lot_size_adj,
-                (Some(b), Some(a)) => lot_size_adj * U64F64::from_num(b + a) / 2  // TODO checked add
-            };
-        }
-        Ok(prices)
-    }
-
-    fn get_prices2(
-        mango_group: &MangoGroup,
         mint_accs: &[AccountInfo],
         oracle_accs: &[AccountInfo],
     ) -> MangoResult<[U64F64; NUM_TOKENS]> {
         let mut prices = [U64F64::from_num(0); NUM_TOKENS];
         prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
-        msg!("gp0");
         prog_assert_eq!(mint_accs[NUM_MARKETS].key, &mango_group.tokens[NUM_MARKETS])?;
         let quote_mint = Mint::unpack(&mint_accs[NUM_MARKETS].try_borrow_data()?)?;
-        msg!("gp1");
 
         // TODO: assumes oracle multiplied by 100 to represent cents; remove assumption
         let quote_adj = U64F64::from_num(10u64.pow(quote_mint.decimals.checked_sub(2).unwrap() as u32));
-        msg!("gp2");
 
         for i in 0..NUM_MARKETS {
-            msg!("oracle_acc_pk: {}", oracle_accs[i].key.to_string());
             let value = flux_aggregator::get_median(&oracle_accs[i])?; // this is in USD cents
             let value = U64F64::from_num(value);
-            msg!("gp3");
 
             prog_assert_eq!(mint_accs[i].key, &mango_group.tokens[i])?;
             let mint = Mint::unpack(&mint_accs[i].try_borrow_data()?)?;
-            msg!("gp4");
 
             let base_adj = U64F64::from_num(10u64.pow(mint.decimals as u32));
             prices[i] = value * (quote_adj / base_adj);
             // TODO: checked mul, checked div
-            msg!("gp5 {}", value);
-
-            // convert value to U64F64 price using native
             // n UI USDC / 1 UI coin
             // mul 10 ^ (quote decimals - oracle decimals) / 10 ^ (base decimals)
         }
