@@ -10,7 +10,7 @@ use common::{convert_assertion_error, read_keypair_file, create_account_rent_exe
 use std::mem::size_of;
 use mango::state::{MangoGroup, NUM_TOKENS, MarginAccount, Loadable};
 use solana_sdk::signature::Signer;
-use mango::instruction::{init_mango_group, init_margin_account, deposit};
+use mango::instruction::{init_mango_group, init_margin_account, deposit, borrow};
 use serde_json::{Value, json};
 use std::fs::File;
 use solana_client::rpc_request::TokenAccountsFilter;
@@ -37,7 +37,6 @@ pub enum Command {
         tokens: Vec<String>,
         #[clap(long, short)]
         mango_program_id: Option<String>,
-
     },
     InitMarginAccount {
         #[clap(long, short)]
@@ -65,7 +64,25 @@ pub enum Command {
         #[clap(long, short)]
         payer: String,
         #[clap(long, short)]
-        quantity: u64
+        ids_path: String,
+        #[clap(long, short)]
+        token_symbol: String,
+        #[clap(long, short)]
+        quantity: f64
+    },
+    Borrow {
+        #[clap(long, short)]
+        payer: String,
+        #[clap(long, short)]
+        ids_path: String,
+        #[clap(long)]
+        mango_group_name: String,
+        #[clap(long)]
+        margin_account: String,
+        #[clap(long, short)]
+        token_symbol: String,
+        #[clap(long, short)]
+        quantity: f64
     },
     ConvertAssertionError {
         #[clap(long, short)]
@@ -134,12 +151,15 @@ pub fn start(opts: Opts) -> Result<()> {
 
             // Find corresponding spot markets
             let mut spot_market_pks = vec![];
+            let mut oracle_pks = vec![];
             let spot_markets = &cluster_ids["spot_markets"];
+            let oracles = &cluster_ids["oracles"];
             let quote_symbol = &tokens[tokens.len() - 1].as_str();
             for i in 0..(tokens.len() - 1) {
                 let base_symbol = &tokens[i].as_str();
                 let market_symbol = format!("{}/{}", base_symbol, quote_symbol);
                 spot_market_pks.push(get_symbol_pk(spot_markets, market_symbol.as_str()));
+                oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
             }
 
             // Send out instruction
@@ -151,6 +171,7 @@ pub fn start(opts: Opts) -> Result<()> {
                 mint_pks.as_slice(),
                 vault_pks.as_slice(),
                 spot_market_pks.as_slice(),
+                oracle_pks.as_slice(),
                 signer_nonce,
                 U64F64::from_num(1.1),
                 U64F64::from_num(1.2)
@@ -241,7 +262,6 @@ pub fn start(opts: Opts) -> Result<()> {
             margin_account,
             quantity
         } => {
-            // Fetch the token wallet for this user
             let payer = read_keypair_file(payer.as_str())?;
             let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
             let cluster_name = opts.cluster.name();
@@ -252,6 +272,8 @@ pub fn start(opts: Opts) -> Result<()> {
             let mango_program_id = Pubkey::from_str(mango_program_id)?;
             let symbols = &cluster_ids["symbols"];
             let mint_pk = get_symbol_pk(symbols, token_symbol.as_str());
+
+            // Fetch the token wallet for this user
             let token_accounts = client.get_token_accounts_by_owner_with_commitment(
                 &payer.pubkey(),
                 TokenAccountsFilter::Mint(mint_pk),
@@ -293,7 +315,66 @@ pub fn start(opts: Opts) -> Result<()> {
             let mval: u64 = margin_account.deposits[token_index].to_num();
             println!("{}", mval);
         }
-        Command::Withdraw { .. } => {}
+        Command::Withdraw {
+            ..
+        } => {
+            unimplemented!()
+        }
+        Command::Borrow {
+            payer,
+            ids_path,
+            mango_group_name,
+            margin_account,
+            token_symbol,
+            quantity
+        } => {
+            let payer = read_keypair_file(payer.as_str())?;
+            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
+            let cluster_name = opts.cluster.name();
+
+            let cluster_ids = &ids[cluster_name];
+            let mango_group_ids = &cluster_ids["mango_groups"][mango_group_name.as_str()];
+
+            let mango_program_id = get_pk(cluster_ids, "mango_program_id");
+            let mango_group_pk = get_pk(mango_group_ids, "mango_group_pk");
+            let margin_account_pk = Pubkey::from_str(margin_account.as_str())?;
+
+            let margin_account = client.get_account(&margin_account_pk)?;
+            let margin_account = MarginAccount::load_from_bytes(margin_account.data.as_slice())?;
+            assert_eq!(margin_account.owner, payer.pubkey());
+            let open_orders_pks = margin_account.open_orders;
+
+            let tokens: Vec<&str> = mango_group_name.split("_").collect();
+            let quote_symbol = tokens.last().unwrap();
+            let oracles = &cluster_ids["oracles"];
+            let mut oracle_pks = vec![];
+            for i in 0..(tokens.len() - 1) {
+                let market_symbol = format!("{}/{}", tokens[i], quote_symbol);
+                oracle_pks.push(get_pk(oracles, market_symbol.as_str()));
+            }
+
+            let mint_pks = get_vec_pks(&mango_group_ids["mint_pks"]);
+            let token_index = tokens.iter().position(|t| *t == token_symbol.as_str()).unwrap();
+            let mint_acc = client.get_account(&mint_pks[token_index])?;
+            let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
+
+            let instruction = borrow(
+                &mango_program_id,
+                &mango_group_pk,
+                &margin_account_pk,
+                &margin_account.owner,
+                &open_orders_pks,
+                oracle_pks.as_slice(),
+                mint_pks.as_slice(),
+                token_index,
+                spl_token::ui_amount_to_amount(quantity, mint.decimals)
+            )?;
+
+            let instructions = vec![instruction];
+            let signers = vec![&payer];
+            send_instructions(&client, instructions, signers, &payer.pubkey())?;
+
+        }
         Command::ConvertAssertionError {
             code
         } => {
@@ -316,7 +397,9 @@ pub fn start(opts: Opts) -> Result<()> {
     Ok(())
 }
 
-
+fn get_pk(json: &Value, name: &str) -> Pubkey {
+    Pubkey::from_str(json[name].as_str().unwrap()).unwrap()
+}
 fn get_symbol_pk(symbols: &Value, symbol: &str) -> Pubkey {
     Pubkey::from_str(symbols[symbol].as_str().unwrap()).unwrap()
 }

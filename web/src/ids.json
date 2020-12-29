@@ -8,7 +8,7 @@
     "dex_program_id": "ykoySLH8uzMqUUEogo3avc17rqQ81SpBoCEybLQMmvn",
     "mango_groups": {
       "BTC_ETH_USDC": {
-        "mango_group_pk": "CQupE2u2fQ9LwhnmNkXnLt3KNDoYuvyQVEttFoSSi69m",
+        "mango_group_pk": "465A2xSBBRfcic1YVGqebRDzEwpcc2JNUHRNhpdogERT",
         "mint_pks": [
           "C6kYXcaRUMqeBF5fhg165RWU7AnpT9z92fvKNoMqjmz6",
           "8p968u9m7jZzKSsqxFDqki69MjqdFkwPM9FN4AN8hvHR",
@@ -19,13 +19,17 @@
           "DNr8ypxHyAcMdKvEorqatpkX6g6TamGAM7jMb4kYZzn8"
         ],
         "vault_pks": [
-          "FbUEdieJpKSAKYP3nWb2FJg8jxnzHw9DR1c5rWsgHZQi",
-          "6ZpBFwxcBM5CC1Vai3zqz94uNmtwuwUkHH1fYJBJxPii",
-          "7MDb6oSwhoA2a622pqjGAdJZVvMFPrrxA51Ct2QA1LrU"
+          "FovD31VmXMtRNfHNTBd6MxDXkrSRhXf53h1CLFhmCSNw",
+          "DBif5xf6h1k8s1uAR2GviQHopAR7YLQsXYh2PAA7cWWw",
+          "Fg4f5PgrPfhymg32fgbStRfMnRUcWUBQ48Nkde5YrHc5"
         ]
       }
     },
-    "mango_program_id": "Gmh9pm5skaj9ywEPJnskox3X1twqeMJqJFN358q9tFst",
+    "mango_program_id": "Ffw12V8FRzzUoLfS88KWmKsVMPBVkr5TWTSFr3kzbn6o",
+    "oracles": {
+      "BTC/USDC": "G3dCq6hWsSnX9rDq4U3ij2qdx1JuEUV6G5s3H5gjjqgr",
+      "ETH/USDC": "CN7Z8eMbchBDAwqfAyFhhDw3NntvnFZizpn6q3y349CU"
+    },
     "spot_markets": {
       "BTC/USDC": "8VaH6YrG26WE7ujytWLbg4fg9ZiwC9KKSMDpPXzXPgXy",
       "ETH/USDC": "DNr8ypxHyAcMdKvEorqatpkX6g6TamGAM7jMb4kYZzn8"
