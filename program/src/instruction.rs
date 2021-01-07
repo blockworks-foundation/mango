@@ -113,14 +113,34 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    Liquidate {
-        deposit_quantities: [u64; NUM_TOKENS]
-    },
 
     // Proxy instructions to Dex
     PlaceOrder {
         market_i: usize,
         order: serum_dex::instruction::NewOrderInstructionV2
+    },
+
+    /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
+    ///
+    /// Accounts expected by this instruction (5 + 2 * NUM_MARKETS + 3 * NUM_TOKENS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` liqor_acc - liquidator's solana account
+    /// 2. `[writable]` liqee_margin_account_acc - MarginAccount of liquidatee
+    /// 3. `[]` token_prog_acc - SPL token program id
+    /// 4. `[]` clock_acc - Clock sysvar account
+    /// 5..5+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
+    /// 5+NUM_MARKETS..5+2*NUM_MARKETS `[]`
+    ///     oracle_accs - flux aggregator feed accounts
+    /// 5+2*NUM_MARKETS..5+2*NUM_MARKETS+NUM_TOKENS `[writable]`
+    ///     vault_accs - MangoGroup vaults
+    /// 5+2*NUM_MARKETS+NUM_TOKENS..5+2*NUM_MARKETS+2*NUM_TOKENS `[writable]`
+    ///     liqor_token_account_accs - Liquidator's token wallets
+    /// 5+2*NUM_MARKETS+2*NUM_TOKENS..5+2*NUM_MARKETS+3*NUM_TOKENS `[]`
+    ///     mint_accs - Mint account for each of the tokens
+    Liquidate {
+        /// Quantity of each token liquidator is depositing in order to bring account above maint
+        deposit_quantities: [u64; NUM_TOKENS]
     },
     SettleFunds,
     CancelOrder {
@@ -454,6 +474,48 @@ pub fn borrow(
     })
 }
 
-pub fn liquidate() {
 
+pub fn liquidate(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    liqor_pk: &Pubkey,
+    liqee_margin_account_pk: &Pubkey,
+    open_orders_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
+    vault_pks: &[Pubkey],
+    liqor_token_account_pks: &[Pubkey],
+    mint_pks: &[Pubkey],
+    deposit_quantities: [u64; NUM_TOKENS]
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*liqor_pk, true),
+        AccountMeta::new(*liqee_margin_account_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(oracle_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(vault_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(liqor_token_account_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(mint_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+
+    let instr = MangoInstruction::Liquidate { deposit_quantities };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
 }

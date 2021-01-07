@@ -174,7 +174,11 @@ impl Processor {
         Ok(())
     }
 
-    fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], quantity: u64) -> MangoResult<()> {
+    fn deposit(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        quantity: u64
+    ) -> MangoResult<()> {
         const NUM_FIXED: usize = 8;
         let accounts = array_ref![accounts, 0, NUM_FIXED];
         let [
@@ -227,7 +231,12 @@ impl Processor {
         Ok(())
     }
 
-    fn withdraw(program_id: &Pubkey, accounts: &[AccountInfo], token_index: usize, quantity: u64) -> MangoResult<()> {
+    fn withdraw(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        token_index: usize,
+        quantity: u64
+    ) -> MangoResult<()> {
         const NUM_FIXED: usize = 8;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + NUM_TOKENS];
         let (
@@ -272,7 +281,7 @@ impl Processor {
         prog_assert!(available >= quantity)?;
         // TODO just borrow (quantity - available)
 
-        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
+        let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
 
         // Withdraw from positions before withdrawing from deposits
         if position >= quantity {
@@ -357,7 +366,7 @@ impl Processor {
         let total_borrows: U64F64 = mango_group.total_borrows[token_index];
         mango_group.total_borrows[token_index] = total_borrows.checked_add(adj_quantity).ok_or(throw!())?;
 
-        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
+        let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
 
         prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
@@ -434,7 +443,6 @@ impl Processor {
         Ok(())
     }
 
-
     fn liquidate(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -446,7 +454,7 @@ impl Processor {
             fixed_accs,
             open_orders_accs,
             oracle_accs,
-            vaults_accs,
+            vault_accs,
             liqor_token_account_accs,
             mint_accs
         ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS, NUM_TOKENS];
@@ -462,7 +470,9 @@ impl Processor {
         // margin ratio = equity / val(borrowed)
         // equity = val(positions) - val(borrowed) + val(collateral)
         prog_assert!(liqor_acc.is_signer)?;
-        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc, program_id
+        )?;
         let mut liqee_margin_account = MarginAccount::load_mut_checked(
             liqee_margin_account_acc, mango_group_acc.key
         )?;
@@ -474,7 +484,7 @@ impl Processor {
             check_open_orders(&open_orders_accs[i], liqee_margin_account_acc.key)?;
         }
 
-        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
+        let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
         let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
         let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
 
@@ -498,7 +508,7 @@ impl Processor {
                 continue;
             }
 
-            let vault_acc: &AccountInfo = &vaults_accs[i];
+            let vault_acc: &AccountInfo = &vault_accs[i];
             let token_account_acc: &AccountInfo = &liqor_token_account_accs[i];
             let deposit_instruction = spl_token::instruction::transfer(
                 &spl_token::id(),
@@ -515,8 +525,8 @@ impl Processor {
 
             solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
             let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[i].deposit;
-            liqee_margin_account.deposits[i] += deposit;
-            mango_group.total_deposits[i] += deposit;
+            liqee_margin_account.checked_add_deposit(i, deposit)?;
+            mango_group.checked_add_deposit(i, deposit)?;
         }
 
         // If all deposits are good, transfer ownership of margin account to liqor
@@ -611,7 +621,7 @@ impl Processor {
         }
 
         // Verify collateral ratio is good enough
-        let prices = Self::get_prices(&mango_group, mint_accs, oracle_accs)?;
+        let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
         prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
         // TODO if collateral ratio not good, allow orders that reduce position; cancel orders that increase pos
@@ -817,42 +827,15 @@ impl Processor {
     ) -> MangoResult<()> {
         let index: &MangoIndex = &mango_group.indexes[token_i];
         let adj_quantity = U64F64::from_num(quantity) / index.borrow;  // TODO checked divide
-        margin_account.borrows[token_i] += adj_quantity;
-        margin_account.positions[token_i] += quantity;
-        mango_group.total_borrows[token_i] += adj_quantity;
+
+        margin_account.checked_add_borrow(token_i, adj_quantity);
+        margin_account.checked_add_position(token_i, quantity);
+        mango_group.checked_add_borrow(token_i, adj_quantity);
 
         // Make sure token deposits are more than borrows
         prog_assert!(mango_group.has_valid_deposits_borrows(token_i))
     }
 
-    fn get_prices(
-        mango_group: &MangoGroup,
-        mint_accs: &[AccountInfo],
-        oracle_accs: &[AccountInfo],
-    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
-        let mut prices = [U64F64::from_num(0); NUM_TOKENS];
-        prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
-        prog_assert_eq!(mint_accs[NUM_MARKETS].key, &mango_group.tokens[NUM_MARKETS])?;
-        let quote_mint = Mint::unpack(&mint_accs[NUM_MARKETS].try_borrow_data()?)?;
-
-        // TODO: assumes oracle multiplied by 100 to represent cents; remove assumption
-        let quote_adj = U64F64::from_num(10u64.pow(quote_mint.decimals.checked_sub(2).unwrap() as u32));
-
-        for i in 0..NUM_MARKETS {
-            let value = flux_aggregator::get_median(&oracle_accs[i])?; // this is in USD cents
-            let value = U64F64::from_num(value);
-
-            prog_assert_eq!(mint_accs[i].key, &mango_group.tokens[i])?;
-            let mint = Mint::unpack(&mint_accs[i].try_borrow_data()?)?;
-
-            let base_adj = U64F64::from_num(10u64.pow(mint.decimals as u32));
-            prices[i] = value * (quote_adj / base_adj);
-            // TODO: checked mul, checked div
-            // n UI USDC / 1 UI coin
-            // mul 10 ^ (quote decimals - oracle decimals) / 10 ^ (base decimals)
-        }
-        Ok(prices)
-    }
     pub fn process(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -934,6 +917,34 @@ impl Processor {
 
 }
 
+pub fn get_prices(
+    mango_group: &MangoGroup,
+    mint_accs: &[AccountInfo],
+    oracle_accs: &[AccountInfo],
+) -> MangoResult<[U64F64; NUM_TOKENS]> {
+    let mut prices = [U64F64::from_num(0); NUM_TOKENS];
+    prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
+    prog_assert_eq!(mint_accs[NUM_MARKETS].key, &mango_group.tokens[NUM_MARKETS])?;
+    let quote_mint = Mint::unpack(&mint_accs[NUM_MARKETS].try_borrow_data()?)?;
+
+    // TODO: assumes oracle multiplied by 100 to represent cents; remove assumption
+    let quote_adj = U64F64::from_num(10u64.pow(quote_mint.decimals.checked_sub(2).unwrap() as u32));
+
+    for i in 0..NUM_MARKETS {
+        let value = flux_aggregator::get_median(&oracle_accs[i])?; // this is in USD cents
+        let value = U64F64::from_num(value);
+
+        prog_assert_eq!(mint_accs[i].key, &mango_group.tokens[i])?;
+        let mint = Mint::unpack(&mint_accs[i].try_borrow_data()?)?;
+
+        let base_adj = U64F64::from_num(10u64.pow(mint.decimals as u32));
+        prices[i] = value * (quote_adj / base_adj);
+        // TODO: checked mul, checked div
+        // n UI USDC / 1 UI coin
+        // mul 10 ^ (quote decimals - oracle decimals) / 10 ^ (base decimals)
+    }
+    Ok(prices)
+}
 
 
 

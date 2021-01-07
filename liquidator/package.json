@@ -32,7 +32,10 @@
     "typescript": "^4.0.5"
   },
   "dependencies": {
-    "@mango/client-ts": "file:../client-ts"
+    "@mango/client-ts": "file:../client-ts",
+    "@solana/web3.js": "^0.88.0",
+    "buffer-layout": "^1.2.0"
+
   },
   "files": [
     "lib"

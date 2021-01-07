@@ -12,7 +12,7 @@ use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-use crate::error::{check_assert, MangoResult, SourceFileId};
+use crate::error::{check_assert, MangoResult, SourceFileId, AssertionError};
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
@@ -32,6 +32,16 @@ macro_rules! prog_assert_eq {
         check_assert($x == $y, line!() as u16, SourceFileId::State)
     }
 }
+
+macro_rules! throw {
+    () => {
+        AssertionError {
+            line: line!() as u16,
+            file_id: SourceFileId::State
+        }
+    }
+}
+
 
 pub trait Loadable: Pod {
     fn load_mut<'a>(account: &'a AccountInfo) -> Result<RefMut<'a, Self>, ProgramError> {
@@ -196,11 +206,21 @@ impl MangoGroup {
     pub fn get_market_index(&self, spot_market_pk: &Pubkey) -> Option<usize> {
         self.spot_markets.iter().position(|market| market == spot_market_pk)
     }
+    pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_add(v).ok_or(throw!())?)
+    }
+    pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_sub(v).ok_or(throw!())?)
+    }
+    pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_add(v).ok_or(throw!())?)
+    }
+    pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_sub(v).ok_or(throw!())?)
+    }
 }
 
 
-
-// Track the issuances of bonds by this user
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct MarginAccount {
@@ -316,7 +336,7 @@ impl MarginAccount {
         }
         for i in 0..NUM_TOKENS {
             let index: &MangoIndex = &mango_group.indexes[i];
-            let native_deposits = index.deposit * self.deposits[i];
+            let native_deposits = index.deposit.checked_mul(self.deposits[i]).unwrap();
             assets += (native_deposits + U64F64::from_num(self.positions[i])) * prices[i];
         }
         Ok(assets)
@@ -335,11 +355,46 @@ impl MarginAccount {
         }
         Ok(liabs)
     }
+    /// Return amount of quote currency to deposit to get account above init_coll_ratio
+    pub fn get_collateral_deficit(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<u64> {
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+
+        if liabs == U64F64::from_num(0) || assets >= liabs * mango_group.init_coll_ratio {
+            Ok(0)
+        } else {
+            Ok((liabs * mango_group.init_coll_ratio - assets).to_num())
+        }
+
+    }
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()
     }
     pub fn get_native_deposit(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.deposits[token_i] * index.deposit).to_num()
+    }
+    pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.borrows[token_i] = self.borrows[token_i].checked_add(v).ok_or(throw!())?)
+    }
+    pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.borrows[token_i] = self.borrows[token_i].checked_sub(v).ok_or(throw!())?)
+    }
+    pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.deposits[token_i] = self.deposits[token_i].checked_add(v).ok_or(throw!())?)
+    }
+    pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
+        Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
+    }
+    pub fn checked_add_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
+        Ok(self.positions[token_i] = self.positions[token_i].checked_add(v).ok_or(throw!())?)
+    }
+    pub fn checked_sub_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
+        Ok(self.positions[token_i] = self.positions[token_i].checked_sub(v).ok_or(throw!())?)
     }
 
 }
@@ -493,7 +548,6 @@ pub fn check_open_orders(
     acc: &AccountInfo,
     owner: &Pubkey
 ) -> MangoResult<()> {
-
     let open_orders = load_open_orders(acc)?;
     if open_orders.account_flags != 0 {
         let valid_flags = (serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::OpenOrders).bits();
@@ -503,7 +557,6 @@ pub fn check_open_orders(
     }
 
     Ok(())
-
 }
 
 

@@ -2,7 +2,6 @@
   "name": "@mango/client-ts",
   "version": "0.0.1",
   "description": "Library for interacting with the serum dex",
-  "repository": "dd/mango",
   "main": "lib/index.js",
   "source": "src/index.js",
   "types": "lib/index.d.ts",
@@ -40,6 +39,10 @@
   "prettier": {
     "singleQuote": true,
     "trailingComma": "all"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^0.88.0",
+    "buffer-layout": "^1.2.0"
   },
   "author": "",
   "license": "ISC"

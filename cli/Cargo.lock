@@ -466,10 +466,12 @@ name = "cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arrayref",
  "chrono",
  "clap 3.0.0-beta.2",
  "common",
  "fixed",
+ "flux-aggregator",
  "mango",
  "serde_json",
  "serum_dex",

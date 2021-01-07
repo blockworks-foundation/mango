@@ -1,47 +1,38 @@
 Arguments: 
-  /usr/local/bin/node /usr/bin/yarn install
+  /usr/local/bin/node /usr/share/yarn/bin/yarn.js install --check-files
 
 PATH: 
-  /home/fernando/.rvm/gems/ruby-2.5.8/bin:/home/fernando/.rvm/gems/ruby-2.5.8@global/bin:/home/fernando/.rvm/rubies/ruby-2.5.8/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/lib/jvm/default/bin:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl:/home/fernando/.rvm/bin:/usr/lib/jvm/default/bin:/home/fernando/Android/Sdk/tools:/home/fernando/Android/Sdk/tools/bin:/home/fernando/Android/Sdk/platform-tools:/home/fernando/.gem/ruby/2.6.0/bin:/bin:/home/fernando/Code/go/bin:/home/fernando/.local/share/solana/install/active_release/bin:/home/fernando/.rvm/bin:/usr/lib/jvm/default/bin:/home/fernando/Android/Sdk/tools:/home/fernando/Android/Sdk/tools/bin:/home/fernando/Android/Sdk/platform-tools:/home/fernando/.gem/ruby/2.6.0/bin:/bin:/home/fernando/Code/go/bin:/home/fernando/.local/share/solana/install/active_release/bin:/home/fernando/.rvm/bin
+  /home/dd/.local/share/solana/install/active_release/bin:/home/dd/.cargo/bin:/home/dd/.pyenv/shims:/home/dd/.pyenv/bin:/home/dd/.local/share/solana/install/active_release/bin:/home/dd/.cargo/bin:/home/dd/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/dd/.dotnet/tools
 
 Yarn version: 
-  1.22.10
+  1.22.5
 
 Node version: 
-  12.13.0
+  14.15.3
 
 Platform: 
   linux x64
 
 Trace: 
-  Error: https://registry.yarnpkg.com/@mango%2fclient-ts: Not found
-      at Request.params.callback [as _callback] (/usr/lib/node_modules/yarn/lib/cli.js:66988:18)
-      at Request.self.callback (/usr/lib/node_modules/yarn/lib/cli.js:140749:22)
-      at Request.emit (events.js:210:5)
-      at Request.<anonymous> (/usr/lib/node_modules/yarn/lib/cli.js:141721:10)
-      at Request.emit (events.js:210:5)
-      at IncomingMessage.<anonymous> (/usr/lib/node_modules/yarn/lib/cli.js:141643:12)
-      at Object.onceWrapper (events.js:299:28)
-      at IncomingMessage.emit (events.js:215:7)
-      at endReadableNT (_stream_readable.js:1183:12)
-      at processTicksAndRejections (internal/process/task_queues.js:80:21)
+  SyntaxError: /home/dd/mango/liquidator/package.json: Unexpected token } in JSON at position 985
+      at JSON.parse (<anonymous>)
+      at /usr/share/yarn/lib/cli.js:1625:59
+      at Generator.next (<anonymous>)
+      at step (/usr/share/yarn/lib/cli.js:310:30)
+      at /usr/share/yarn/lib/cli.js:321:13
 
 npm manifest: 
   {
     "name": "@mango/liquidator",
     "version": "0.0.1",
     "description": "Library for interacting with the serum dex",
-    "license": "MIT",
-    "repository": "dd/mango",
-    "main": "lib/index.js",
-    "source": "src/index.js",
-    "types": "lib/index.d.ts",
     "engines": {
       "node": ">=10"
     },
     "scripts": {
       "build": "tsc",
-      "start": "tsc --watch",
+      "start": "node dist/index.js",
+      "watch": "tsc --watch",
       "clean": "rm -rf dist",
       "prepare": "run-s clean build",
       "shell": "node -e \"$(< shell)\" -i --experimental-repl-await"
@@ -65,7 +56,8 @@ npm manifest:
       "typescript": "^4.0.5"
     },
     "dependencies": {
-      "@mango/client-ts": "files:../client-ts"
+      "@mango/client-ts": "file:../client-ts",
+      "@solana/web3.js": "^0.88.0",
     },
     "files": [
       "lib"
@@ -564,6 +556,9 @@ Lockfile:
       "@types/node" "*"
       "@types/yargs" "^15.0.0"
       chalk "^4.0.0"
+  
+  "@mango/client-ts@file:../client-ts":
+    version "0.0.1"
   
   "@nodelib/fs.scandir@2.1.4":
     version "2.1.4"

@@ -22,4 +22,7 @@ serde_json = "1.0.60"
 chrono = "*"
 common = { version = "*", path = "../common" }
 serum_dex = { version = "*", git = "https://github.com/project-serum/serum-dex.git", features=["no-entrypoint", "client"] }
+flux-aggregator = { version = "^0.1", git = "https://github.com/czl1378/solana-flux-aggregator.git", features=["no-entrypoint"] }
+arrayref = "^0.3.6"
+
 fixed = { version = "=0.5.7" }
