@@ -147,6 +147,9 @@ fn get_accounts(client: &RpcClient, pks: &[Pubkey]) -> Vec<(Pubkey, Account)> {
         .collect()
 }
 
+
+
+
 fn run_liquidator(
     client: &RpcClient,
     cids: ClusterIds,
@@ -210,11 +213,6 @@ fn run_liquidator(
             let open_orders_accs = create_account_infos(open_orders_accs.as_mut_slice());
             let open_orders_accs = array_ref![open_orders_accs.as_slice(), 0, NUM_MARKETS];
 
-            let deficit = margin_account.get_collateral_deficit(
-                mango_group,
-                &prices,
-                open_orders_accs
-            )?;
 
             let coll_ratio = margin_account.get_collateral_ratio(mango_group, &prices, open_orders_accs)?;
 
@@ -225,6 +223,12 @@ fn run_liquidator(
 
             if coll_ratio < mango_group.maint_coll_ratio && coll_ratio >= min_coll_ratio {
                 // determine how much to deposit to get the account above init coll ratio
+                let deficit = margin_account.get_collateral_deficit(
+                    mango_group,
+                    &prices,
+                    open_orders_accs
+                )?;
+
                 println!("Sending liquidation instruction");
                 let instruction = liquidate(
                     &cids.mango_program_id,
@@ -242,8 +246,13 @@ fn run_liquidator(
                 let signers = vec![liqor_kp];
                 match send_instructions(&client, instructions, signers, &liqor_kp.pubkey()) {
                     Ok(()) => {
-                        println!("Successfully liquidated");
-                        // Now sell off all non-USDC assets and withdraw USDC
+                        println!("Successfully taken ownership of the MarginAccount");
+                        // 1. cancel all outstanding orders and settle funds into MarginAccount
+                        //      a. load all outstanding orders
+                        //      b. cancel each one using its order id
+                        // 2. for each of the borrowed assets, see how to close them
+                        // 3. then send closing orders for them
+
                     }
                     Err(e) => {
                         println!("{}", e);

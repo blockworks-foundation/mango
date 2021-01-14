@@ -172,11 +172,56 @@ pub enum MangoInstruction {
         order: serum_dex::instruction::NewOrderInstructionV2
     },
 
-
+    /// Settle all funds from serum dex open orders into MarginAccount positions
+    ///
+    /// Accounts expected by this instruction (8 + 4 * NUM_MARKETS + NUM_TOKENS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` owner_acc - MarginAccount owner
+    /// 2. `[writable]` margin_account_acc - MarginAccount
+    /// 3. `[]` clock_acc - Clock sysvar account
+    /// 4. `[]` dex_prog_acc - program id of serum dex
+    /// 5. `[]` signer_acc - MangoGroup signer key
+    /// 6. `[]` dex_signer_acc - dex Market signer account
+    /// 7. `[]` spl token program
+    /// 8..8+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 8+NUM_MARKETS..8+2*NUM_MARKETS `[writable]` spot_market_accs - dex MarketState accounts
+    /// 8+2*NUM_MARKETS..8+3*NUM_MARKETS `[writable]` dex_base_accs - dex base (coin) vaults
+    /// 8+3*NUM_MARKETS..8+4*NUM_MARKETS `[writable]` dex_quote_accs - dex quote (pc) vaults
+    /// 8+4*NUM_MARKETS..8+4*NUM_MARKETS+NUM_TOKENS `[writable]` vault_accs - MangoGroup vaults
     SettleFunds,
+
+    /// Cancel an order using dex instruction
+    ///
+    /// Accounts expected by this instruction (9):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` owner_acc - MarginAccount owner
+    /// 2. `[]` margin_account_acc - MarginAccount
+    /// 3. `[]` clock_acc - Clock sysvar account
+    /// 4. `[]` dex_prog_acc - program id of serum dex
+    /// 5. `[writable]` spot_market_acc - serum dex MarketState
+    /// 6. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
+    /// 7. `[writable]` dex_request_queue_acc - serum dex request queue for this market
+    /// 8. `[]` signer_acc - MangoGroup signer key
     CancelOrder {
-        instruction: serum_dex::instruction::CancelOrderInstruction
+        order: serum_dex::instruction::CancelOrderInstruction
     },
+
+
+    /// Cancel an order using dex instruction
+    ///
+    /// Accounts expected by this instruction (9):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` owner_acc - MarginAccount owner
+    /// 2. `[]` margin_account_acc - MarginAccount
+    /// 3. `[]` clock_acc - Clock sysvar account
+    /// 4. `[]` dex_prog_acc - program id of serum dex
+    /// 5. `[writable]` spot_market_acc - serum dex MarketState
+    /// 6. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
+    /// 7. `[writable]` dex_request_queue_acc - serum dex request queue for this market
+    /// 8. `[]` signer_acc - MangoGroup signer key
     CancelOrderByClientId {
         client_id: u64
     },
@@ -278,7 +323,7 @@ impl MangoInstruction {
                 let order_id = u128::from_le_bytes(*fields.1);
                 let owner = cast(*fields.2);
                 let &[owner_slot] = fields.3;
-                let instruction = serum_dex::instruction::CancelOrderInstruction {
+                let order = serum_dex::instruction::CancelOrderInstruction {
                     side,
                     order_id,
                     owner,
@@ -286,7 +331,7 @@ impl MangoInstruction {
                 };
 
                 MangoInstruction::CancelOrder {
-                    instruction
+                    order
                 }
             },
             10 => {
@@ -609,3 +654,122 @@ pub fn place_order(
         data
     })
 }
+
+
+pub fn settle_funds(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    dex_prog_id: &Pubkey,
+    signer_pk: &Pubkey,
+    dex_signer_pk: &Pubkey,
+    open_orders_pks: &[Pubkey],
+    spot_market_pks: &[Pubkey],
+    dex_base_pks: &[Pubkey],
+    dex_quote_pks: &[Pubkey],
+    vault_pks: &[Pubkey]
+) -> Result<Instruction, ProgramError> {
+
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+        AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new_readonly(*dex_signer_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(spot_market_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(dex_base_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(dex_quote_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(vault_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+
+    let instr = MangoInstruction::SettleFunds;
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn cancel_order(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    dex_prog_id: &Pubkey,
+    spot_market_pk: &Pubkey,
+    open_orders_pk: &Pubkey,
+    dex_request_queue_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    order: serum_dex::instruction::CancelOrderInstruction
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(*margin_account_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+        AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*open_orders_pk, false),
+        AccountMeta::new(*dex_request_queue_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+    ];
+
+    let instr = MangoInstruction::CancelOrder { order };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn cancel_order_by_client_id(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    dex_prog_id: &Pubkey,
+    spot_market_pk: &Pubkey,
+    open_orders_pk: &Pubkey,
+    dex_request_queue_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    client_id: u64
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(*margin_account_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+        AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*open_orders_pk, false),
+        AccountMeta::new(*dex_request_queue_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+    ];
+
+    let instr = MangoInstruction::CancelOrderByClientId { client_id };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+

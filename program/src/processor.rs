@@ -574,9 +574,14 @@ impl Processor {
 
         let open_orders_account = load_open_orders(&open_orders_accs[market_i])?;
         prog_assert_eq!(open_orders_accs[market_i].key, &margin_account.open_orders[market_i])?;
+        check_open_orders(&open_orders_accs[market_i], signer_acc.key)?;
 
-        let quote_avail = open_orders_account.native_pc_free + margin_account.positions[NUM_MARKETS];
-        let base_avail = open_orders_account.native_coin_free + margin_account.positions[market_i];
+        let quote_avail = open_orders_account.native_pc_free
+            .checked_add(margin_account.positions[NUM_MARKETS])
+            .unwrap();
+        let base_avail = open_orders_account.native_coin_free
+            .checked_add(margin_account.positions[market_i])
+            .unwrap();
 
         // Todo make sure different order types are valid, assuming Limit right now
 
@@ -740,8 +745,8 @@ impl Processor {
 
             prog_assert!(post_base <= pre_base)?;
             prog_assert!(post_quote <= pre_quote)?;
-            margin_account.positions[i] += pre_base - post_base;
-            margin_account.positions[NUM_MARKETS] += pre_quote - post_quote;
+            margin_account.checked_add_position(i, pre_base - post_base)?;
+            margin_account.checked_add_position(NUM_MARKETS, pre_quote - post_quote)?;
         }
 
         Ok(())
@@ -886,10 +891,10 @@ impl Processor {
                 Self::settle_funds(program_id, accounts)?;
             }
             MangoInstruction::CancelOrder {
-                instruction
+                order
             } => {
                 msg!("CancelOrder");
-                let data =  serum_dex::instruction::MarketInstruction::CancelOrder(instruction).pack();
+                let data =  serum_dex::instruction::MarketInstruction::CancelOrder(order).pack();
                 Self::cancel_order(program_id, accounts, data)?;
             }
             MangoInstruction::CancelOrderByClientId {
