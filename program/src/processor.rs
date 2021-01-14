@@ -14,7 +14,7 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
 
-use crate::error::{check_assert, MangoResult, SourceFileId, AssertionError};
+use crate::error::{check_assert, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
 use crate::state::{AccountFlag, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, check_open_orders};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
@@ -29,15 +29,6 @@ macro_rules! prog_assert {
 macro_rules! prog_assert_eq {
     ($x:expr, $y:expr) => {
         check_assert($x == $y, line!() as u16, SourceFileId::Processor)
-    }
-}
-
-macro_rules! throw {
-    () => {
-        AssertionError {
-            line: line!() as u16,
-            file_id: SourceFileId::Processor
-        }
     }
 }
 
@@ -357,14 +348,9 @@ impl Processor {
         let index: &MangoIndex = &mango_group.indexes[token_index];
         let adj_quantity = U64F64::from_num(quantity) / index.borrow;
 
-        let position: u64 = margin_account.positions[token_index];
-        margin_account.positions[token_index] = position.checked_add(quantity).ok_or(throw!())?;
-
-        let borrow: U64F64 = margin_account.borrows[token_index];
-        margin_account.borrows[token_index] = borrow.checked_add(adj_quantity).ok_or(throw!())?;
-
-        let total_borrows: U64F64 = mango_group.total_borrows[token_index];
-        mango_group.total_borrows[token_index] = total_borrows.checked_add(adj_quantity).ok_or(throw!())?;
+        margin_account.checked_add_position(token_index, quantity)?;
+        margin_account.checked_add_borrow(token_index, adj_quantity)?;
+        mango_group.checked_add_borrow(token_index, adj_quantity)?;
 
         let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
@@ -542,15 +528,14 @@ impl Processor {
         order: serum_dex::instruction::NewOrderInstructionV2
     ) -> MangoResult<()> {
 
-        const NUM_FIXED: usize = 12;
-        let accounts = array_ref![accounts, 0, NUM_FIXED + 3 * NUM_MARKETS + NUM_TOKENS];
+        const NUM_FIXED: usize = 13;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + NUM_TOKENS];
         let (
             fixed_accs,
             open_orders_accs,
-            spot_market_accs,
             oracle_accs,
             mint_accs
-        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS];
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS];
 
         let [
             mango_group_acc,
@@ -558,6 +543,7 @@ impl Processor {
             margin_account_acc,
             clock_acc,
             dex_prog_acc,
+            spot_market_acc,
             dex_request_queue_acc,
             vault_acc,
             signer_acc,
@@ -578,7 +564,7 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
-        let spot_market = load_market_state(&spot_market_accs[market_i], &mango_group.dex_program_id)?;
+        let spot_market = load_market_state(spot_market_acc, &mango_group.dex_program_id)?;
         let price = order.limit_price.get();
         let base_lots = order.max_qty.get();
         let quote_lots = price * base_lots;
@@ -632,7 +618,7 @@ impl Processor {
             program_id: *dex_prog_acc.key,
             data,
             accounts: vec![
-                AccountMeta::new(*spot_market_accs[market_i].key, false),
+                AccountMeta::new(*spot_market_acc.key, false),
                 AccountMeta::new(*open_orders_accs[market_i].key, false),
                 AccountMeta::new(*dex_request_queue_acc.key, false),
                 AccountMeta::new(*vault_acc.key, false),
@@ -645,7 +631,7 @@ impl Processor {
         };
         let account_infos = [
             dex_prog_acc.clone(),  // Have to add account of the program id
-            spot_market_accs[market_i].clone(),
+            spot_market_acc.clone(),
             open_orders_accs[market_i].clone(),
             dex_request_queue_acc.clone(),
             vault_acc.clone(),
@@ -828,9 +814,9 @@ impl Processor {
         let index: &MangoIndex = &mango_group.indexes[token_i];
         let adj_quantity = U64F64::from_num(quantity) / index.borrow;  // TODO checked divide
 
-        margin_account.checked_add_borrow(token_i, adj_quantity);
-        margin_account.checked_add_position(token_i, quantity);
-        mango_group.checked_add_borrow(token_i, adj_quantity);
+        margin_account.checked_add_borrow(token_i, adj_quantity)?;
+        margin_account.checked_add_position(token_i, quantity)?;
+        mango_group.checked_add_borrow(token_i, adj_quantity)?;
 
         // Make sure token deposits are more than borrows
         prog_assert!(mango_group.has_valid_deposits_borrows(token_i))
@@ -841,6 +827,7 @@ impl Processor {
         accounts: &[AccountInfo],
         data: &[u8]
     ) -> MangoResult<()> {
+        msg!("Mango Processor");
         let instruction = MangoInstruction::unpack(data).ok_or(ProgramError::InvalidInstructionData)?;
         match instruction {
             MangoInstruction::InitMangoGroup {

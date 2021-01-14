@@ -59,3 +59,4 @@ MANGO_GROUP_NAME=BTC_ETH_USDC
 cargo run -- $CLUSTER run-liquidator --ids-path $IDS_PATH --payer $KEYPAIR --mango-group-name $MANGO_GROUP_NAME
 
 ```
+
