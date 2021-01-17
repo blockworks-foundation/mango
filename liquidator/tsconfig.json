@@ -1,15 +1,18 @@
 {
+  "extends": "@tsconfig/node14/tsconfig.json",
+
   "compilerOptions": {
     "outDir": "./dist",
     "module": "commonjs",
-    "target": "es5",
     "allowJs": true,
     "checkJs": true,
     "declaration": true,
     "declarationMap": true,
     "noImplicitAny": false,
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "target": "ES6"
   },
   "include": ["./src/**/*"],
   "exclude": ["./src/**/*.test.js", "node_modules", "**/node_modules"]

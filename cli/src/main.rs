@@ -11,7 +11,7 @@ use clap::Clap;
 use common::{Cluster, convert_assertion_error, create_account_rent_exempt,
              create_signer_key_and_nonce, create_token_account, read_keypair_file, send_instructions};
 use fixed::types::U64F64;
-use mango::instruction::{borrow, deposit, init_mango_group, init_margin_account, liquidate, withdraw};
+use mango::instruction::{borrow, deposit, init_mango_group, init_margin_account, liquidate, withdraw, settle_borrow};
 use mango::processor::get_prices;
 use mango::state::{Loadable, MangoGroup, MarginAccount, NUM_MARKETS, NUM_TOKENS};
 use serde_json::{json, Value};
@@ -96,6 +96,20 @@ pub enum Command {
         #[clap(long, short)]
         quantity: f64
     },
+    SettleBorrow {
+        #[clap(long, short)]
+        payer: String,
+        #[clap(long, short)]
+        ids_path: String,
+        #[clap(long)]
+        mango_group_name: String,
+        #[clap(long)]
+        margin_account: String,
+        #[clap(long, short)]
+        token_symbol: String,
+        #[clap(long, short)]
+        quantity: Option<f64>
+    },
     ConvertAssertionError {
         #[clap(long, short)]
         code: u32,
@@ -114,6 +128,17 @@ pub enum Command {
         #[clap(long, short)]
         mango_group_name: String,
     },
+
+    PlaceOrder {
+
+    },
+    SettleFunds {
+
+    },
+    CancelOrder {
+
+    },
+
     PrintPrices {
         #[clap(long, short)]
         ids_path: String,
@@ -146,9 +171,6 @@ fn get_accounts(client: &RpcClient, pks: &[Pubkey]) -> Vec<(Pubkey, Account)> {
         .map(|(i, a)| (pks[i], a.as_ref().unwrap().clone()))
         .collect()
 }
-
-
-
 
 fn run_liquidator(
     client: &RpcClient,
@@ -253,6 +275,13 @@ fn run_liquidator(
                         // 2. for each of the borrowed assets, see how to close them
                         // 3. then send closing orders for them
 
+                        /*
+                            Load outstanding orders:
+                            need to fetch the bids and asks
+                            iterate through and filter for orders owned by this user
+
+                         */
+
                     }
                     Err(e) => {
                         println!("{}", e);
@@ -356,6 +385,9 @@ impl MangoGroupIds {
             vault_pks: get_vec_pks(&value["vault_pks"]),
             oracle_pks: get_vec_pks(&value["oracle_pks"])
         }
+    }
+    pub fn get_token_index(&self, token_pk: &Pubkey) -> Option<usize> {
+        self.mint_pks.iter().position(|pk| pk == token_pk)
     }
 }
 
@@ -787,6 +819,52 @@ pub fn start(opts: Opts) -> Result<()> {
             // borrows
             // val in open orders
         }
+        Command::SettleBorrow {
+            payer,
+            ids_path,
+            mango_group_name,
+            margin_account,
+            token_symbol,
+            quantity
+        } => {
+            let payer = read_keypair_file(payer.as_str())?;
+            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
+            let cluster_name = opts.cluster.name();
+            let cluster_ids = &ids[cluster_name];
+            let cids = ClusterIds::load(cluster_ids);
+            let mgids = cids.mango_groups[&mango_group_name].clone();
+
+            let margin_account_pk = Pubkey::from_str(margin_account.as_str())?;
+            let margin_account = client.get_account(&margin_account_pk)?;
+            let margin_account = MarginAccount::load_from_bytes(margin_account.data.as_slice())?;
+            assert_eq!(margin_account.owner, payer.pubkey());
+
+            let token_pk = &cids.symbols[&token_symbol];
+            let token_i = mgids.get_token_index(token_pk).unwrap();
+
+            let mint_acc = client.get_account(token_pk)?;
+            let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
+
+            let quantity = match quantity {
+                None => margin_account.positions[token_i],
+                Some(q) => spl_token::ui_amount_to_amount(q, mint.decimals)
+            };
+            let instruction = settle_borrow(
+                &cids.mango_program_id,
+                &mgids.mango_group_pk,
+                &margin_account_pk,
+                &margin_account.owner,
+                token_i,
+                quantity
+            )?;
+            let instructions = vec![instruction];
+            let signers = vec![&payer];
+            send_instructions(&client, instructions, signers, &payer.pubkey())?;
+
+        }
+        Command::PlaceOrder { .. } => {}
+        Command::SettleFunds { .. } => {}
+        Command::CancelOrder { .. } => {}
     }
     Ok(())
 }

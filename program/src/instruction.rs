@@ -556,6 +556,30 @@ pub fn borrow(
     })
 }
 
+pub fn settle_borrow(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    token_index: usize,
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    let instr = MangoInstruction::SettleBorrow { token_index, quantity };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
 pub fn liquidate(
     program_id: &Pubkey,
     mango_group_pk: &Pubkey,

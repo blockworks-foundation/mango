@@ -2,6 +2,7 @@
 
 import {struct, blob, nu64, union, u32, Layout, bits, Blob, seq } from 'buffer-layout';
 import { PublicKey } from '@solana/web3.js';
+import BN from 'bn.js';
 
 export const NUM_TOKENS = 3;
 export const NUM_MARKETS = NUM_TOKENS - 1;
@@ -24,6 +25,39 @@ export function publicKeyLayout(property) {
   return new PublicKeyLayout(property);
 }
 
+class BNLayout extends Blob {
+  decode(b, offset) {
+    return new BN(super.decode(b, offset), 10, 'le');
+  }
+
+  encode(src, b, offset) {
+    return super.encode(src.toArrayLike(Buffer, 'le', this.span), b, offset);
+  }
+}
+
+export function u64(property) {
+  return new BNLayout(8, property);
+}
+
+export function u128(property) {
+  return new BNLayout(16, property);
+}
+
+
+class U64F64Layout extends Blob {
+  decode(b, offset) {
+    let raw = new BN(super.decode(b, offset), 10, 'le');
+    return raw / Math.pow(2, 64);
+  }
+
+  encode(src, b, offset) {
+    return super.encode(src.toArrayLike(Buffer, 'le', this.span), b, offset);
+  }
+}
+
+export function U64F64(property) {
+  return new U64F64Layout(16, property)
+}
 
 export class WideBits extends Layout {
   constructor(property) {
@@ -62,28 +96,27 @@ export function accountFlagsLayout(property = 'accountFlags') {
   return ACCOUNT_FLAGS_LAYOUT.replicate(property);  // TODO: when ts check is on, replicate throws error, doesn't compile
 }
 
-
 export const MangoIndexLayout = struct([
-  nu64('last_update'),
-  blob(16, 'borrow'), // U64F64
-  blob(16, 'deposit')  // U64F64
+  u64('lastUpdate'),
+  U64F64('borrow'), // U64F64
+  U64F64('deposit')  // U64F64
 ]);
 
 export const MangoGroupLayout = struct([
-  nu64('account_flags'),
-  blob(32 * NUM_TOKENS, 'tokens'),
-  blob(32 * NUM_TOKENS, 'vaults'),
-  blob(MangoIndexLayout.span * NUM_TOKENS, 'indexes'),
-  blob(32 * NUM_MARKETS, 'spot_markets'),
-  blob(32 * NUM_MARKETS, 'oracles'),
-  nu64('signer_nonce'),
-  blob(32, 'signer_key'),
-  blob(32, 'dex_program_id'),
+  accountFlagsLayout('account_flags'),
+  seq(publicKeyLayout(), NUM_TOKENS, 'tokens'),
+  seq(publicKeyLayout(), NUM_TOKENS, 'vaults'),
+  seq(MangoIndexLayout.replicate(), NUM_TOKENS, 'indexes'),
+  seq(publicKeyLayout(), NUM_MARKETS, 'spot_markets'),
+  seq(publicKeyLayout(), NUM_MARKETS, 'oracles'),
 
-  blob(16 * NUM_TOKENS, 'total_deposits'),
-  blob(16 * NUM_TOKENS, 'total_borrows'),
-  blob(16, 'maint_coll_ratio'),
-  blob(16, 'init_coll_ratio'),
+  u64('signer_nonce'),
+  publicKeyLayout('signer_key'),
+  publicKeyLayout('dex_program_id'),
+  seq(U64F64(), NUM_TOKENS, 'total_deposits'),
+  seq(U64F64(), NUM_TOKENS, 'total_borrows'),
+  U64F64('maint_coll_ratio'),
+  U64F64('init_coll_ratio')
 ]);
 
 
@@ -91,9 +124,10 @@ export const MarginAccountLayout = struct([
   accountFlagsLayout('account_flags'),
   publicKeyLayout('mango_group'),
   publicKeyLayout('owner'),
-  seq(blob(16), NUM_TOKENS, 'deposits'),
-  seq(blob(16), NUM_TOKENS, 'borrows'),
-  seq(nu64(), NUM_TOKENS, 'positions'),
+
+  seq(U64F64(), NUM_TOKENS, 'total_deposits'),
+  seq(U64F64(), NUM_TOKENS, 'total_borrows'),
+  seq(u64(), NUM_TOKENS, 'total_deposits'),
   seq(publicKeyLayout(), NUM_MARKETS, 'open_orders')
 ]);
 

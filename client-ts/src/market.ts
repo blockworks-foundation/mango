@@ -5,22 +5,7 @@ import {
 } from "@solana/web3.js";
 import {MarginAccountLayout, NUM_TOKENS} from "./layouts";
 
-export class MangoGroup {
-  tokens: {mintPk: PublicKey, name: string}
 
-
-}
-
-export class MarginAccount {
-  mangoGroup: MangoGroup
-
-  constructor(mangoGroup: MangoGroup) {
-    this.mangoGroup = mangoGroup;
-  }
-
-
-
-}
 
 export class MangoClient {
   greeting: string;

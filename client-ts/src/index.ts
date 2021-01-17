@@ -1,2 +1,2 @@
 export { MangoClient } from './market';
-export { MangoIndexLayout, MarginAccountLayout } from './layouts';
+export { MangoIndexLayout, MarginAccountLayout, MangoGroupLayout } from './layouts';

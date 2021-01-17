@@ -18,6 +18,7 @@
     "url": "git@168.235.108.190:dd/mango.git"
   },
   "devDependencies": {
+    "@tsconfig/node14": "^1.0.0",
     "@types/jest": "^26.0.9",
     "@typescript-eslint/eslint-plugin": "^4.6.0",
     "@typescript-eslint/parser": "^4.6.0",
@@ -34,8 +35,8 @@
   "dependencies": {
     "@mango/client-ts": "file:../client-ts",
     "@solana/web3.js": "^0.88.0",
+    "bn.js": "^5.1.3",
     "buffer-layout": "^1.2.0"
-
   },
   "files": [
     "lib"
