@@ -4,9 +4,7 @@ import {
   Connection,
   PublicKey
 } from "@solana/web3.js";
-import { BN } from 'bn.js';
 import IDS from "./ids.json";
-import { MangoGroupLayout } from '@mango/client-ts/lib/layouts';
 
 async function main() {
   const client = new MangoClient();
@@ -18,13 +16,14 @@ async function main() {
   const mangoGroupPk = new PublicKey(IDS.devnet.mango_groups.BTC_ETH_USDC.mango_group_pk);
   const mangoProgramId = new PublicKey(IDS.devnet.mango_program_id);
 
-  const mangoGroupInfo = await connection.getAccountInfo(mangoGroupPk);
-  // @ts-ignore
-  const mangoGroup = MangoGroupLayout.decode(mangoGroupInfo.data);
+  const mangoGroup = await client.getMangoGroup(connection, mangoProgramId, mangoGroupPk);
+  const marginAccounts = await client.getAllMarginAccounts(connection, mangoProgramId, mangoGroupPk);
+  const prices = await mangoGroup.getPrices(connection);
+  console.log(prices);
 
-  console.log(mangoGroup.indexes[0].borrow);
-  console.log(mangoGroup.maint_coll_ratio);
-  console.log(mangoGroup.tokens[0].toBase58());
+  console.log(mangoGroup.accountFlags);
+
+
   // get all outstanding margin accounts
   // const marginAccounts = await client.getAllMarginAccounts(connection, mangoProgramId, mangoGroupPk);
   //

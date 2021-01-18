@@ -500,9 +500,11 @@
 "@mango/client-ts@file:../client-ts":
   version "0.0.1"
   dependencies:
-    "@solana/web3.js" "0.86.1"
+    "@project-serum/serum" "^0.13.18"
+    "@solana/web3.js" "^0.90.0"
     bn.js "^5.1.2"
     buffer-layout "^1.2.0"
+    double.js "^1.0.14"
 
 "@nodelib/fs.scandir@2.1.4":
   version "2.1.4"
@@ -524,6 +526,15 @@
   dependencies:
     "@nodelib/fs.scandir" "2.1.4"
     fastq "^1.6.0"
+
+"@project-serum/serum@^0.13.18":
+  version "0.13.18"
+  resolved "https://registry.yarnpkg.com/@project-serum/serum/-/serum-0.13.18.tgz#66adf2cf00d54612b71ec7cff211658060a8d660"
+  integrity sha512-DpTMuidbLSMt9TQSIRhusLyt5TcGXaiTBH7IsowZQrexa4gXgKmSrpuSc7JLUs9V7t7ILta8KX5YHTFQuWJEZQ==
+  dependencies:
+    "@solana/web3.js" "0.86.1"
+    bn.js "^5.1.2"
+    buffer-layout "^1.2.0"
 
 "@sinonjs/commons@^1.7.0":
   version "1.8.1"
@@ -562,10 +573,10 @@
     tweetnacl "^1.0.0"
     ws "^7.0.0"
 
-"@solana/web3.js@^0.88.0":
-  version "0.88.0"
-  resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-0.88.0.tgz#319d24a03b0b65922338a482c5ba060a401b514f"
-  integrity sha512-e3dvt+k6keooHuwRR7ZcQoiz0Emi/5fr5QsLBCJyM6WOtId5IYVXLl/3VRxLOBWWcvnhUrhejrOTrASEs1bEqA==
+"@solana/web3.js@^0.90.0":
+  version "0.90.0"
+  resolved "https://registry.yarnpkg.com/@solana/web3.js/-/web3.js-0.90.0.tgz#e7043af04426f1af6404ea1664b5715970a06ea2"
+  integrity sha512-bBWEBLbU26we/gcLMfAxg2V/r1Y1WiPAfVcWV8vJDd9EsRt56I9bt6fATUaHhKgfmQQtxBdxCiz9LCm3WrPQEQ==
   dependencies:
     "@babel/runtime" "^7.3.1"
     bn.js "^5.0.0"
@@ -1662,6 +1673,11 @@ domutils@^1.5.1:
   dependencies:
     dom-serializer "0"
     domelementtype "1"
+
+double.js@^1.0.14:
+  version "1.0.14"
+  resolved "https://registry.yarnpkg.com/double.js/-/double.js-1.0.14.tgz#f138b1e75c0317d5d684cdd5727a45e71d7a6c9f"
+  integrity sha512-Bpx4dxqUlcoUop+h4ywPsw2CSVMy5rYzZnmLggFo3HTzLH77JwCzUMl4TgBIhByKuz4xCx1coOq657H0tj8r8g==
 
 ecc-jsbn@~0.1.1:
   version "0.1.2"

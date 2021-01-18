@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@mango/client-ts": "file:../client-ts",
-    "@solana/web3.js": "^0.88.0",
+    "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.3",
     "buffer-layout": "^1.2.0"
   },
