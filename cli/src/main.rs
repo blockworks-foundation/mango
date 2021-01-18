@@ -118,7 +118,7 @@ pub enum Command {
         #[clap(long, short)]
         keypair: String,
         #[clap(long, short)]
-        filepath: String,
+        filepath: Option<String>,
     },
     RunLiquidator {
         #[clap(long, short)]
@@ -734,9 +734,15 @@ pub fn start(opts: Opts) -> Result<()> {
         } => {
 
             let keypair = read_keypair_file(keypair.as_str())?;
-            let mut f = File::create(filepath.as_str()).unwrap();
-            write!(&mut f, "{}", keypair.to_base58_string())?;
-            // println!("{}", keypair.to_base58_string())
+            match filepath {
+                None => {
+                    println!("{}", keypair.to_base58_string());
+                }
+                Some(filepath) => {
+                    let mut f = File::create(filepath.as_str()).unwrap();
+                    write!(&mut f, "{}", keypair.to_base58_string())?;
+                }
+            }
         }
         Command::RunLiquidator {
             payer,

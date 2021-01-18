@@ -33,9 +33,7 @@ export class MangoGroup {
   async getPrices(
     connection: Connection,
   ): Promise<number[]>  {
-
     const prices: number[] = [];
-
     const oracleAccs = await getMultipleAccounts(connection, this.oracles);
     for (let i = 0; i < oracleAccs.length; i++) {
       const decoded = decodeAggregatorInfo(oracleAccs[i].accountInfo)
@@ -44,6 +42,7 @@ export class MangoGroup {
     prices.push(1.0)
     return prices
   }
+
 
 }
 
@@ -138,9 +137,7 @@ async function getMultipleAccounts(
 
 ): Promise<{ publicKey: PublicKey; accountInfo: AccountInfo<Buffer> }[]> {
   const publickKeyStrs = publicKeys.map((pk) => (pk.toBase58()));
-  for (let i = 0; i < publickKeyStrs.length; i++) {
-    console.log(publickKeyStrs[i]);
-  }
+
   // @ts-ignore
   const resp = await connection._rpcRequest('getMultipleAccounts', [publickKeyStrs]);
   if (resp.error) {
