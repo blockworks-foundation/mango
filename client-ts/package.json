@@ -53,7 +53,8 @@
     "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.2",
     "buffer-layout": "^1.2.0",
-    "double.js": "^1.0.14"
+    "double.js": "^1.0.14",
+    "@project-serum/sol-wallet-adapter": "^0.1.4"
   },
   "browserslist": [
     ">0.2%",

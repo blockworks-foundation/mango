@@ -1,11 +1,27 @@
 import {
+  Account,
   AccountInfo,
   Connection,
-  PublicKey
-} from "@solana/web3.js";
-import {MangoGroupLayout, MarginAccountLayout, NUM_TOKENS, publicKeyLayout, u64, WideBits} from "./layout";
+  PublicKey,
+  sendAndConfirmRawTransaction,
+  SYSVAR_RENT_PUBKEY,
+  Transaction,
+  TransactionInstruction,
+  TransactionSignature,
+} from '@solana/web3.js';
+import {
+  encodeMangoInstruction,
+  MangoGroupLayout,
+  MarginAccountLayout,
+  publicKeyLayout,
+  u64,
+  WideBits
+} from "./layout";
 import BN from "bn.js";
-import {struct, blob, nu64, union, u8, u32, Layout, bits, Blob, seq, BitStructure } from 'buffer-layout';
+import {struct, blob, u8 } from 'buffer-layout';
+import {createAccountInstruction} from "./utils";
+import {OpenOrders} from "@project-serum/serum";
+import { Wallet } from '@project-serum/sol-wallet-adapter';
 
 
 export class MangoGroup {
@@ -14,7 +30,7 @@ export class MangoGroup {
   accountFlags!: WideBits;
   tokens!: PublicKey[];
   vaults!: PublicKey[];
-  indexes!: { lastUpdate: number, borrow: number, deposit: number };
+  indexes!: { lastUpdate: BN, borrow: number, deposit: number };
   spotMarkets!: PublicKey[];
   oracles!: PublicKey[];
   signerNonce!: BN;
@@ -68,9 +84,85 @@ export class MangoClient {
   async initMangoGroup() {
     throw new Error("Not Implemented");
   }
-  async initMarginAccount() {
-    throw new Error("Not Implemented");
+  async sendTransaction(
+    connection: Connection,
+    transaction: Transaction,
+    payer: Account | Wallet,
+    additionalSigners: Account[]
+  ): Promise<TransactionSignature> {
+    transaction.recentBlockhash = (await connection.getRecentBlockhash('max')).blockhash
+    transaction.setSigners(payer.publicKey, ...additionalSigners.map( a => a.publicKey ))
+
+    // if Wallet was provided, sign with wallet
+    if ((typeof payer) == Wallet) {  // TODO test with wallet
+      if (additionalSigners.length > 0) {
+        transaction.partialSign(...additionalSigners)
+      }
+      transaction = payer.signTransaction(transaction)
+    } else {
+      // otherwise sign with the payer account
+      const signers = [payer].concat(additionalSigners)
+      transaction.sign(...signers)
+    }
+    const rawTransaction = transaction.serialize();
+    return await sendAndConfirmRawTransaction(connection, rawTransaction)
   }
+  async initMarginAccount(
+    connection: Connection,
+    programId: PublicKey,
+    dexProgramId: PublicKey,  // public key of serum dex MarketState
+    mangoGroup: MangoGroup,
+    payer: Account | Wallet
+  ): Promise<PublicKey> {
+
+    // Create a Solana account for the MarginAccount and allocate space
+    const accInstr = await createAccountInstruction(connection, payer.publicKey, MarginAccountLayout.span, programId)
+    const openOrdersSpace = OpenOrders.getLayout(dexProgramId).span
+
+    // Create a Solana account for each of the OpenOrders accounts
+    const openOrdersLamports = await connection.getMinimumBalanceForRentExemption(openOrdersSpace, 'singleGossip')
+    const openOrdersAccInstrs = await Promise.all(mangoGroup.spotMarkets.map(
+      (_) => createAccountInstruction(connection, payer.publicKey, openOrdersSpace, dexProgramId, openOrdersLamports)
+    ))
+
+    // Specify the accounts this instruction takes in (see program/src/instruction.rs)
+    const keys = [
+      { isSigner: false, isWritable: false, pubkey: mangoGroup.publicKey},
+      { isSigner: false, isWritable: true,  pubkey: accInstr.account.publicKey },
+      { isSigner: true,  isWritable: false, pubkey: payer.publicKey },
+      { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY },
+      ...openOrdersAccInstrs.map(
+        (o) => ({ isSigner: false,  isWritable: false, pubkey: o.account.publicKey })
+      )
+    ]
+
+    // Encode and create instruction for actual initMarginAccount instruction
+    const data = encodeMangoInstruction({ InitMarginAccount: {} })
+    const initMarginAccountInstruction = new TransactionInstruction( { keys, data, programId })
+
+    // Add all instructions to one atomic transaction
+    const transaction = new Transaction()
+    transaction.add(accInstr.instruction)
+    transaction.add(...openOrdersAccInstrs.map( o => o.instruction ))
+    transaction.add(initMarginAccountInstruction)
+
+    // Specify signers in addition to the wallet
+    const additionalSigners = [
+      accInstr.account,
+      ...openOrdersAccInstrs.map( o => o.account )
+    ]
+
+    // sign, send and confirm transaction
+    await this.sendTransaction(connection, transaction, payer, additionalSigners)
+
+    return accInstr.account.publicKey
+  }
+
+  /**
+   * @Arthur
+   * Find instruction details in program/src/instruction.rs
+   * Look at cli/src/main.rs under Deposit command for an example in rust
+   */
   async deposit() {
     throw new Error("Not Implemented");
   }

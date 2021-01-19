@@ -153,4 +153,10 @@ MangoInstructionLayout.addVariant(1, struct([]), 'InitMarginAccount');
 MangoInstructionLayout.addVariant(2, struct([nu64('quantity')]), 'Deposit');
 MangoInstructionLayout.addVariant(3, struct([nu64('quantity')]), 'Withdraw');
 
-
+// @ts-ignore
+const instructionMaxSpan = Math.max(...Object.values(MangoInstructionLayout.registry).map((r) => r.span));
+export function encodeMangoInstruction(data) {
+  const b = Buffer.alloc(instructionMaxSpan);
+  const span = MangoInstructionLayout.encode(data, b);
+  return b.slice(0, span);
+}
