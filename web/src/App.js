@@ -135,8 +135,6 @@ function App() {
 
   const [marginAccounts, setMarginAccounts] = useState(undefined);
 
-
-
   async function fetchMarginAccounts() {
     if (!wallet.publicKey || !connection || !connected) {
       console.error('ensure wallet is connected', wallet, connection, connected);

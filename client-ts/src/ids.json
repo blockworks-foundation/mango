@@ -5,10 +5,10 @@
     "mainnet": "https://api.mainnet-beta.solana.com"
   },
   "devnet": {
-    "dex_program_id": "ykoySLH8uzMqUUEogo3avc17rqQ81SpBoCEybLQMmvn",
+    "dex_program_id": "9MVDeYQnJmN2Dt7H44Z8cob4bET2ysdNu2uFJcatDJno",
     "mango_groups": {
       "BTC_ETH_USDC": {
-        "mango_group_pk": "7bnvmWNKZXL11QYDE8oSjseBaLojcJVhpMBEmtWoEw89",
+        "mango_group_pk": "HXmmjquAUDzSkWcwTj4K2RrRDZYz9aHH37v6RpDB6T1k",
         "mint_pks": [
           "C6kYXcaRUMqeBF5fhg165RWU7AnpT9z92fvKNoMqjmz6",
           "8p968u9m7jZzKSsqxFDqki69MjqdFkwPM9FN4AN8hvHR",
@@ -19,24 +19,24 @@
           "8mRBudYbSsUH9PjkburCAp7xTSsVWasa3y8frBgCJG36"
         ],
         "spot_market_pks": [
-          "8VaH6YrG26WE7ujytWLbg4fg9ZiwC9KKSMDpPXzXPgXy",
-          "DNr8ypxHyAcMdKvEorqatpkX6g6TamGAM7jMb4kYZzn8"
+          "D9CBrNncuERiTzQwUVkxCevrM6irHJybeU2NQXtgXRbq",
+          "AxZKYcPs7VRdukHEWqHggvNrm5MwQ44uPzkiEYVUwqov"
         ],
         "vault_pks": [
-          "5obgAnnmsMRCr8rV7BYvAjKLir1iLxaC2cFka94xm5tY",
-          "HWu1BxfgscDzb3n1C7NFcpujMWx2Yx82ScQHQsKDpBeg",
-          "F2Xv9bTUZox9YmMsTrw7Vbe4UTfYMw3nNXuY8sh1k71W"
+          "FVT59h1PGZS8cx3byrHTCVfpeX4V7ZvtoEvPnVW7jFYR",
+          "D6XnxaQis4CDVrG785YsQyGoCGGHG23wmvyiHCTFehcs",
+          "8NPV6gZ5aqf65mfRgCJuxZBAUWuyDPXbNao1Fs9gZkwN"
         ]
       }
     },
-    "mango_program_id": "8CDQ5a8M42Locm6y4bRMNNqRhhbHiUdKsnceKHqsgz24",
+    "mango_program_id": "Ge6ziTFHYFxBNaPB74rt5XXU34WjhSNRxQMhk14uFMAY",
     "oracles": {
       "BTC/USDC": "DkwTe15VtMMSEn3HiLPtBRk4pzFq3EWXoH6cbqU5n5Cz",
       "ETH/USDC": "8mRBudYbSsUH9PjkburCAp7xTSsVWasa3y8frBgCJG36"
     },
     "spot_markets": {
-      "BTC/USDC": "8VaH6YrG26WE7ujytWLbg4fg9ZiwC9KKSMDpPXzXPgXy",
-      "ETH/USDC": "DNr8ypxHyAcMdKvEorqatpkX6g6TamGAM7jMb4kYZzn8"
+      "BTC/USDC": "D9CBrNncuERiTzQwUVkxCevrM6irHJybeU2NQXtgXRbq",
+      "ETH/USDC": "AxZKYcPs7VRdukHEWqHggvNrm5MwQ44uPzkiEYVUwqov"
     },
     "symbols": {
       "BTC": "C6kYXcaRUMqeBF5fhg165RWU7AnpT9z92fvKNoMqjmz6",

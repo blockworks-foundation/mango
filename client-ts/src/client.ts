@@ -3,7 +3,7 @@ import {
   AccountInfo,
   Connection,
   PublicKey,
-  sendAndConfirmRawTransaction,
+  sendAndConfirmRawTransaction, SYSVAR_CLOCK_PUBKEY,
   SYSVAR_RENT_PUBKEY,
   Transaction,
   TransactionInstruction,
@@ -20,8 +20,9 @@ import {
 import BN from "bn.js";
 import {struct, blob, u8 } from 'buffer-layout';
 import {createAccountInstruction} from "./utils";
-import {OpenOrders} from "@project-serum/serum";
+import { Market, OpenOrders } from '@project-serum/serum';
 import { Wallet } from '@project-serum/sol-wallet-adapter';
+import { TOKEN_PROGRAM_ID } from '@project-serum/serum/lib/token-instructions';
 
 
 export class MangoGroup {
@@ -59,7 +60,14 @@ export class MangoGroup {
     return prices
   }
 
-
+  getMarketIndex(spotMarket: Market): number {
+    for (let i = 0; i < this.spotMarkets.length; i++) {
+      if (this.spotMarkets[i].equals(spotMarket.publicKey)) {
+        return i
+      }
+    }
+    throw new Error("This Market does not belong to this MangoGroup")
+  }
 }
 
 export class MarginAccount {
@@ -105,12 +113,12 @@ export class MangoClient {
       transaction.sign(...signers)
     }
     const rawTransaction = transaction.serialize();
-    return await sendAndConfirmRawTransaction(connection, rawTransaction)
+    return await sendAndConfirmRawTransaction(connection, rawTransaction, {skipPreflight: true})
   }
   async initMarginAccount(
     connection: Connection,
     programId: PublicKey,
-    dexProgramId: PublicKey,  // public key of serum dex MarketState
+    dexProgramId: PublicKey,  // Serum DEX program ID
     mangoGroup: MangoGroup,
     payer: Account | Wallet
   ): Promise<PublicKey> {
@@ -169,6 +177,7 @@ export class MangoClient {
   async withdraw() {
     throw new Error("Not Implemented");
   }
+
   async borrow() {
     throw new Error("Not Implemented");
   }
@@ -178,8 +187,82 @@ export class MangoClient {
   async liquidate() {
     throw new Error("Not Implemented");
   }
-  async placeOrder() {
-    throw new Error("Not Implemented");
+  async placeOrder(
+    connection: Connection,
+    programId: PublicKey,
+    mangoGroup: MangoGroup,
+    marginAccount: MarginAccount,
+    spotMarket: Market,
+    owner: Account | Wallet,
+
+    side: 'buy' | 'sell',
+    price: number,
+    size: number,
+    orderType?: 'limit' | 'ioc' | 'postOnly',
+    clientId?: BN,
+
+  ): Promise<TransactionSignature> {
+
+    const requestQueueKey = spotMarket['_decoded'].requestQueue
+    const quoteVault = spotMarket['_decoded'].quoteVault
+    const baseVault = spotMarket['_decoded'].baseVault
+
+    orderType = orderType ?? 'limit'
+    const marketIndex = mangoGroup.getMarketIndex(spotMarket)
+    const vaultIndex = (side === 'buy') ? mangoGroup.vaults.length - 1 : marketIndex
+
+    const vaultPk = mangoGroup.vaults[vaultIndex]
+    const keys = [
+      { isSigner: false, isWritable: true, pubkey: mangoGroup.publicKey},
+      { isSigner: true, isWritable: false,  pubkey: owner.publicKey },
+      { isSigner: false,  isWritable: true, pubkey: marginAccount.publicKey },
+      { isSigner: false, isWritable: false, pubkey: SYSVAR_CLOCK_PUBKEY },
+      { isSigner: false, isWritable: false, pubkey: spotMarket.programId },
+      { isSigner: false, isWritable: true, pubkey: spotMarket.publicKey },
+      { isSigner: false, isWritable: true, pubkey: requestQueueKey },
+      { isSigner: false, isWritable: true, pubkey: vaultPk },
+      { isSigner: false, isWritable: false, pubkey: mangoGroup.signerKey },
+      { isSigner: false, isWritable: true, pubkey: baseVault },
+      { isSigner: false, isWritable: true, pubkey: quoteVault },
+      { isSigner: false, isWritable: false, pubkey: TOKEN_PROGRAM_ID },
+      { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY },
+      ...marginAccount.openOrders.map( (pubkey) => ( { isSigner: false, isWritable: true, pubkey })),
+      ...mangoGroup.oracles.map( (pubkey) => ( { isSigner: false, isWritable: false, pubkey })),
+      ...mangoGroup.tokens.map( (pubkey) => ( { isSigner: false, isWritable: false, pubkey })),
+    ]
+
+    const limitPrice = spotMarket.priceNumberToLots(price)
+    const maxQuantity = spotMarket.baseSizeNumberToLots(size)
+    if (maxQuantity.lte(new BN(0))) {
+      throw new Error('size too small')
+    }
+    if (limitPrice.lte(new BN(0))) {
+      throw new Error('invalid price')
+    }
+
+    const marketI = new BN(marketIndex)
+    const selfTradeBehavior = 'decrementTake'
+    const data = encodeMangoInstruction(
+      {
+        PlaceOrder:
+          clientId
+            ? { marketI, side, limitPrice, maxQuantity, orderType, clientId, selfTradeBehavior }
+            : { marketI, side, limitPrice, maxQuantity, orderType, selfTradeBehavior }
+      }
+    )
+
+    const placeOrderInstruction = new TransactionInstruction( { keys, data, programId })
+
+    // Add all instructions to one atomic transaction
+    const transaction = new Transaction()
+    transaction.add(placeOrderInstruction)
+
+    // Specify signers in addition to the wallet
+    const additionalSigners = []
+
+    // sign, send and confirm transaction
+    return await this.sendTransaction(connection, transaction, owner, additionalSigners)
+
   }
   async settleFunds() {
     throw new Error("Not Implemented");
@@ -190,13 +273,19 @@ export class MangoClient {
 
   async getMangoGroup(
     connection: Connection,
-    programId: PublicKey,
     mangoGroupPk: PublicKey
   ): Promise<MangoGroup> {
     const acc = await connection.getAccountInfo(mangoGroupPk);
     return new MangoGroup(mangoGroupPk, MangoGroupLayout.decode(acc?.data));
   }
 
+  async getMarginAccount(
+    connection: Connection,
+    marginAccountPk: PublicKey
+  ): Promise<MarginAccount> {
+    const acc = await connection.getAccountInfo(marginAccountPk, 'singleGossip')
+    return new MarginAccount(marginAccountPk, MarginAccountLayout.decode(acc?.data))
+  }
   async getAllMarginAccounts(
     connection: Connection,
     programId: PublicKey,

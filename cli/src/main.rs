@@ -5,7 +5,7 @@ use std::io::Write;
 use std::mem::size_of;
 use std::str::FromStr;
 
-use anyhow::{Result, Error};
+use anyhow::{Result};
 use arrayref::array_ref;
 use clap::Clap;
 use common::{Cluster, convert_assertion_error, create_account_rent_exempt,

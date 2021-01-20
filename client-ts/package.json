@@ -1,11 +1,12 @@
 {
   "name": "@mango/client-ts",
   "version": "0.0.1",
-  "description": "Library for interacting with the serum dex",
+  "description": "Library for interacting with Mango",
   "main": "lib/index.js",
-  "repository": "project-serum/serum-ts",
+  "repository": "mango/client-ts",
   "source": "src/index.js",
   "types": "lib/index.d.ts",
+  "license": "MIT",
   "engines": {
     "node": ">=10"
   },
