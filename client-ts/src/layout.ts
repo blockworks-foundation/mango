@@ -199,7 +199,6 @@ MangoInstructionLayout.addVariant(6, struct([seq(u64(), NUM_TOKENS, 'depositQuan
 MangoInstructionLayout.addVariant(7,
   struct(
     [
-      u64('marketI'),
       sideLayout('side'),
       u64('limitPrice'),
       u64('maxQuantity'),

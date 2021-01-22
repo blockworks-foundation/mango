@@ -3,6 +3,7 @@ import { Account, Connection, PublicKey } from '@solana/web3.js';
 import IDS from "./ids.json";
 import * as fs from 'fs';
 import { Market } from '@project-serum/serum';
+import { NUM_TOKENS } from './layout';
 
 export { MangoClient, MangoGroup, MarginAccount } from './client';
 export { MangoIndexLayout, MarginAccountLayout, MangoGroupLayout } from './layout';
@@ -18,18 +19,15 @@ async function main() {
 
   const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk);
 
-  for (const pk of mangoGroup.vaults) {
-    const x = await connection.getAccountInfo(pk)
-    console.log(x?.data.byteLength)
-  }
-
   const keyPairPath = '/home/dd/.config/solana/id.json'
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
   // TODO auto fetch
-  const marginAccountPk = new PublicKey("GU9WHjoUoTvmwgKyA4d7nNeUapT1RcxwK2Gc8EGE1Tmi")
-  const marginAccount = await client.getMarginAccount(connection, marginAccountPk)
-
+  const marginAccountPk = new PublicKey("49x7kYonP6DxpmHsnbrcwbZm5Nb1WbFSddzGPnyUpKm1")
+  let marginAccount = await client.getMarginAccount(connection, marginAccountPk)
+  for (let i = 0; i < NUM_TOKENS; i++) {
+    console.log(marginAccount.deposits[i].toString(), marginAccount.borrows[i].toString(), marginAccount.positions[i].toString())
+  }
   const marketIndex = 0  // index for BTC/USDC
   const spotMarket = await Market.load(
     connection,
@@ -39,18 +37,33 @@ async function main() {
   )
 
   // margin short 0.1 BTC
-  const sig = await client.placeOrder(
+  await client.placeOrder(
     connection,
     mangoProgramId,
     mangoGroup,
     marginAccount,
     spotMarket,
     payer,
-    'sell',
-    38000,
+    'buy',
+    33000,
     0.1
   )
-  console.log(sig)
+
+  await spotMarket.matchOrders(connection, payer, 10)
+
+  await client.settleFunds(
+    connection,
+    mangoProgramId,
+    mangoGroup,
+    marginAccount,
+    payer,
+    spotMarket
+  )
+
+  marginAccount = await client.getMarginAccount(connection, marginAccount.publicKey)
+  for (let i = 0; i < NUM_TOKENS; i++) {
+    console.log(marginAccount.deposits[i].toString(), marginAccount.borrows[i].toString(), marginAccount.positions[i].toString())
+  }
 }
 
 main();

@@ -8,7 +8,6 @@ use fixed::types::U64F64;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
-use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
@@ -278,32 +277,12 @@ impl MarginAccount {
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
         if liabs > assets {
-            msg!("This account should be liquidated!");
             Ok(U64F64::from_num(0))
         } else {
             Ok(assets - liabs)
         }
     }
-    pub fn get_free_equity(
-        &self,
-        mango_group: &MangoGroup,
-        prices: &[U64F64; NUM_TOKENS],
-        open_orders_accs: &[AccountInfo; NUM_MARKETS]
-    ) -> MangoResult<U64F64> {
-        let liabs = self.get_liabs_val(mango_group, prices)?;
-        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
-        if liabs > assets {
-            msg!("This account should be liquidated!");
-            Ok(U64F64::from_num(0))
-        } else {
-            let locked_assets = liabs * mango_group.init_coll_ratio;
-            if assets < locked_assets {
-                Ok(U64F64::from_num(0))
-            } else {
-                Ok(assets - locked_assets)
-            }
-        }
-    }
+
     pub fn get_collateral_ratio(
         &self,
         mango_group: &MangoGroup,
@@ -328,16 +307,28 @@ impl MarginAccount {
         // TODO weight collateral differently
         // equity = val(deposits) + val(positions) + val(open_orders) - val(borrows)
         let mut assets: U64F64 = U64F64::from_num(0);
-        for i in 0..NUM_MARKETS {
+        for i in 0..NUM_MARKETS {  // Add up all the value in open orders
             // TODO check open orders details
+            if *open_orders_accs[i].key == Pubkey::default() {
+                continue;
+            }
+
             let open_orders = load_open_orders(&open_orders_accs[i])?;
-            assets += U64F64::from_num(open_orders.native_coin_total) * prices[i]
-                + U64F64::from_num(open_orders.native_pc_total);
+            assets = U64F64::from_num(open_orders.native_coin_total)
+                .checked_mul(prices[i]).unwrap()
+                .checked_add(U64F64::from_num(open_orders.native_pc_total)).unwrap()
+                .checked_add(assets).unwrap();
+
         }
-        for i in 0..NUM_TOKENS {
+        for i in 0..NUM_TOKENS {  // add up the value in margin account deposits and positions
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_deposits = index.deposit.checked_mul(self.deposits[i]).unwrap();
-            assets += (native_deposits + U64F64::from_num(self.positions[i])) * prices[i];
+
+            assets = native_deposits
+                .checked_add(U64F64::from_num(self.positions[i])).unwrap()
+                .checked_mul(prices[i]).unwrap()
+                .checked_add(assets).unwrap();
+
         }
         Ok(assets)
 
@@ -548,13 +539,16 @@ pub fn check_open_orders(
     acc: &AccountInfo,
     owner: &Pubkey
 ) -> MangoResult<()> {
-    let open_orders = load_open_orders(acc)?;
-    if open_orders.account_flags != 0 {
-        let valid_flags = (serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::OpenOrders).bits();
-        prog_assert_eq!(open_orders.account_flags, valid_flags)?;
-        let oos_owner = open_orders.owner;
-        prog_assert_eq!(oos_owner, owner.to_aligned_bytes())?;
+
+    if *acc.key == Pubkey::default() {
+        return Ok(());
     }
+    // if it's not default, it must be initialized
+    let open_orders = load_open_orders(acc)?;
+    let valid_flags = (serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::OpenOrders).bits();
+    prog_assert_eq!(open_orders.account_flags, valid_flags)?;
+    let oos_owner = open_orders.owner;
+    prog_assert_eq!(oos_owner, owner.to_aligned_bytes())?;
 
     Ok(())
 }

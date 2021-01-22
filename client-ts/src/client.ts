@@ -125,23 +125,13 @@ export class MangoClient {
 
     // Create a Solana account for the MarginAccount and allocate space
     const accInstr = await createAccountInstruction(connection, payer.publicKey, MarginAccountLayout.span, programId)
-    const openOrdersSpace = OpenOrders.getLayout(dexProgramId).span
-
-    // Create a Solana account for each of the OpenOrders accounts
-    const openOrdersLamports = await connection.getMinimumBalanceForRentExemption(openOrdersSpace, 'singleGossip')
-    const openOrdersAccInstrs = await Promise.all(mangoGroup.spotMarkets.map(
-      (_) => createAccountInstruction(connection, payer.publicKey, openOrdersSpace, dexProgramId, openOrdersLamports)
-    ))
 
     // Specify the accounts this instruction takes in (see program/src/instruction.rs)
     const keys = [
       { isSigner: false, isWritable: false, pubkey: mangoGroup.publicKey},
       { isSigner: false, isWritable: true,  pubkey: accInstr.account.publicKey },
       { isSigner: true,  isWritable: false, pubkey: payer.publicKey },
-      { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY },
-      ...openOrdersAccInstrs.map(
-        (o) => ({ isSigner: false,  isWritable: false, pubkey: o.account.publicKey })
-      )
+      { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY }
     ]
 
     // Encode and create instruction for actual initMarginAccount instruction
@@ -151,13 +141,11 @@ export class MangoClient {
     // Add all instructions to one atomic transaction
     const transaction = new Transaction()
     transaction.add(accInstr.instruction)
-    transaction.add(...openOrdersAccInstrs.map( o => o.instruction ))
     transaction.add(initMarginAccountInstruction)
 
     // Specify signers in addition to the wallet
     const additionalSigners = [
       accInstr.account,
-      ...openOrdersAccInstrs.map( o => o.account )
     ]
 
     // sign, send and confirm transaction
@@ -187,6 +175,7 @@ export class MangoClient {
   async liquidate() {
     throw new Error("Not Implemented");
   }
+
   async placeOrder(
     connection: Connection,
     programId: PublicKey,
@@ -209,6 +198,36 @@ export class MangoClient {
 
     orderType = orderType ?? 'limit'
     const marketIndex = mangoGroup.getMarketIndex(spotMarket)
+
+    const zeroKey = new PublicKey(new Uint8Array(32))
+
+
+    // Add all instructions to one atomic transaction
+    const transaction = new Transaction()
+
+    // Specify signers in addition to the wallet
+    const additionalSigners: Account[] = []
+
+    // Create a Solana account for the open orders account if it's missing
+    const openOrdersKeys: PublicKey[] = [];
+    for (let i = 0; i < marginAccount.openOrders.length; i++) {
+      if (i === marketIndex && marginAccount.openOrders[marketIndex].equals(zeroKey)) {
+        // open orders missing for this market; create a new one now
+        const openOrdersSpace = OpenOrders.getLayout(mangoGroup.dexProgramId).span
+        const openOrdersLamports = await connection.getMinimumBalanceForRentExemption(openOrdersSpace, 'singleGossip')
+        const accInstr = await createAccountInstruction(
+          connection, owner.publicKey, openOrdersSpace, mangoGroup.dexProgramId, openOrdersLamports
+        )
+
+        transaction.add(accInstr.instruction)
+        additionalSigners.push(accInstr.account)
+        openOrdersKeys.push(accInstr.account.publicKey)
+      } else {
+        openOrdersKeys.push(marginAccount.openOrders[i])
+      }
+    }
+
+
     const vaultIndex = (side === 'buy') ? mangoGroup.vaults.length - 1 : marketIndex
 
     const vaultPk = mangoGroup.vaults[vaultIndex]
@@ -226,7 +245,7 @@ export class MangoClient {
       { isSigner: false, isWritable: true, pubkey: quoteVault },
       { isSigner: false, isWritable: false, pubkey: TOKEN_PROGRAM_ID },
       { isSigner: false, isWritable: false, pubkey: SYSVAR_RENT_PUBKEY },
-      ...marginAccount.openOrders.map( (pubkey) => ( { isSigner: false, isWritable: true, pubkey })),
+      ...openOrdersKeys.map( (pubkey) => ( { isSigner: false, isWritable: true, pubkey })),
       ...mangoGroup.oracles.map( (pubkey) => ( { isSigner: false, isWritable: false, pubkey })),
       ...mangoGroup.tokens.map( (pubkey) => ( { isSigner: false, isWritable: false, pubkey })),
     ]
@@ -240,32 +259,74 @@ export class MangoClient {
       throw new Error('invalid price')
     }
 
-    const marketI = new BN(marketIndex)
+    // TODO allow wrapped SOL wallets
+    // TODO allow fee discounts
     const selfTradeBehavior = 'decrementTake'
     const data = encodeMangoInstruction(
       {
         PlaceOrder:
           clientId
-            ? { marketI, side, limitPrice, maxQuantity, orderType, clientId, selfTradeBehavior }
-            : { marketI, side, limitPrice, maxQuantity, orderType, selfTradeBehavior }
+            ? { side, limitPrice, maxQuantity, orderType, clientId, selfTradeBehavior }
+            : { side, limitPrice, maxQuantity, orderType, selfTradeBehavior }
       }
     )
 
     const placeOrderInstruction = new TransactionInstruction( { keys, data, programId })
+    transaction.add(placeOrderInstruction)
+
+
+    // sign, send and confirm transaction
+    return await this.sendTransaction(connection, transaction, owner, additionalSigners)
+
+  }
+  async settleFunds(
+    connection: Connection,
+    programId: PublicKey,
+    mangoGroup: MangoGroup,
+    marginAccount: MarginAccount,
+    owner: Account | Wallet,
+    spotMarket: Market,
+
+  ): Promise<TransactionSignature> {
+
+    const marketIndex = mangoGroup.getMarketIndex(spotMarket)
+    const dexSigner = await PublicKey.createProgramAddress(
+      [
+        spotMarket.publicKey.toBuffer(),
+        spotMarket['_decoded'].vaultSignerNonce.toArrayLike(Buffer, 'le', 8)
+      ],
+      spotMarket.programId
+    )
+
+    const keys = [
+      { isSigner: false, isWritable: true, pubkey: mangoGroup.publicKey},
+      { isSigner: true, isWritable: false,  pubkey: owner.publicKey },
+      { isSigner: false,  isWritable: true, pubkey: marginAccount.publicKey },
+      { isSigner: false, isWritable: false, pubkey: SYSVAR_CLOCK_PUBKEY },
+      { isSigner: false, isWritable: false, pubkey: spotMarket.programId },
+      { isSigner: false, isWritable: true, pubkey: spotMarket.publicKey },
+      { isSigner: false, isWritable: true, pubkey: marginAccount.openOrders[marketIndex] },
+      { isSigner: false, isWritable: false, pubkey: mangoGroup.signerKey },
+      { isSigner: false, isWritable: true, pubkey: spotMarket['_decoded'].baseVault },
+      { isSigner: false, isWritable: true, pubkey: spotMarket['_decoded'].quoteVault },
+      { isSigner: false, isWritable: true, pubkey: mangoGroup.vaults[marketIndex] },
+      { isSigner: false, isWritable: true, pubkey: mangoGroup.vaults[mangoGroup.vaults.length - 1] },
+      { isSigner: false, isWritable: false, pubkey: dexSigner },
+      { isSigner: false, isWritable: false, pubkey: TOKEN_PROGRAM_ID },
+    ]
+    const data = encodeMangoInstruction( {SettleFunds: {}} )
+
+    const instruction = new TransactionInstruction( { keys, data, programId })
 
     // Add all instructions to one atomic transaction
     const transaction = new Transaction()
-    transaction.add(placeOrderInstruction)
+    transaction.add(instruction)
 
     // Specify signers in addition to the wallet
     const additionalSigners = []
 
     // sign, send and confirm transaction
     return await this.sendTransaction(connection, transaction, owner, additionalSigners)
-
-  }
-  async settleFunds() {
-    throw new Error("Not Implemented");
   }
   async cancelOrder() {
     throw new Error("Not Implemented");

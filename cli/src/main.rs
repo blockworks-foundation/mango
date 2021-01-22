@@ -504,30 +504,14 @@ pub fn start(opts: Opts) -> Result<()> {
             let cluster_name = opts.cluster.name();
             let cluster_ids = &ids[cluster_name];
             let mango_program_id = cluster_ids["mango_program_id"].as_str().unwrap();
-            let dex_program_id = cluster_ids["dex_program_id"].as_str().unwrap();
-
             let mango_program_id = Pubkey::from_str(mango_program_id)?;
-            let dex_program_id = Pubkey::from_str(dex_program_id)?;
 
             let group_ids = &cluster_ids["mango_groups"][mango_group_name.as_str()];
             let mango_group_pk = Pubkey::from_str(group_ids["mango_group_pk"].as_str().unwrap())?;
-            let spot_market_pks = get_vec_pks(&group_ids["spot_market_pks"]);
 
             let margin_account_pk = create_account_rent_exempt(
                 &client, &payer, size_of::<MarginAccount>(), &mango_program_id
             )?.pubkey();
-
-            let mut open_orders_pks = vec![];
-            for _ in 0..spot_market_pks.len() {
-                let open_orders_pk = create_account_rent_exempt(
-                    &client,
-                    &payer,
-                    size_of::<serum_dex::state::OpenOrders>() + 12,  // add size of padding
-                    &dex_program_id
-                )?.pubkey();
-
-                open_orders_pks.push(open_orders_pk);
-            }
 
 
             // Send out instruction
@@ -536,7 +520,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 &mango_group_pk,
                 &margin_account_pk,
                 &payer.pubkey(),
-                &open_orders_pks
             )?;
             let instructions = vec![instruction];
             let signers = vec![&payer];

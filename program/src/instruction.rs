@@ -49,7 +49,6 @@ pub enum MangoInstruction {
     /// 1. `[writable]` margin_account_acc - the margin account data
     /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
     /// 3. `[]` rent_acc - Rent sysvar account
-    /// 4..4+NUM_MARKETS `[]` open_orders_accs - uninitialized serum dex open orders accounts
     InitMarginAccount,
 
     /// Deposit funds into margin account to be used as collateral and earn interest.
@@ -168,27 +167,27 @@ pub enum MangoInstruction {
     /// 13+2*NUM_MARKETS..13+2*NUM_MARKETS+NUM_TOKENS `[]`
     ///     mint_accs - Mint account for each of the tokens
     PlaceOrder {
-        market_i: usize,
         order: serum_dex::instruction::NewOrderInstructionV2
     },
 
     /// Settle all funds from serum dex open orders into MarginAccount positions
     ///
-    /// Accounts expected by this instruction (8 + 4 * NUM_MARKETS + NUM_TOKENS):
+    /// Accounts expected by this instruction (14):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` owner_acc - MarginAccount owner
     /// 2. `[writable]` margin_account_acc - MarginAccount
     /// 3. `[]` clock_acc - Clock sysvar account
     /// 4. `[]` dex_prog_acc - program id of serum dex
-    /// 5. `[]` signer_acc - MangoGroup signer key
-    /// 6. `[]` dex_signer_acc - dex Market signer account
-    /// 7. `[]` spl token program
-    /// 8..8+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
-    /// 8+NUM_MARKETS..8+2*NUM_MARKETS `[writable]` spot_market_accs - dex MarketState accounts
-    /// 8+2*NUM_MARKETS..8+3*NUM_MARKETS `[writable]` dex_base_accs - dex base (coin) vaults
-    /// 8+3*NUM_MARKETS..8+4*NUM_MARKETS `[writable]` dex_quote_accs - dex quote (pc) vaults
-    /// 8+4*NUM_MARKETS..8+4*NUM_MARKETS+NUM_TOKENS `[writable]` vault_accs - MangoGroup vaults
+    /// 5  `[writable]` spot_market_acc - dex MarketState account
+    /// 6  `[writable]` open_orders_acc - open orders for this market for this MarginAccount
+    /// 7. `[]` signer_acc - MangoGroup signer key
+    /// 8. `[writable]` dex_base_acc - base vault for dex MarketState
+    /// 9. `[writable]` dex_quote_acc - quote vault for dex MarketState
+    /// 10. `[writable]` base_vault_acc - MangoGroup base vault acc
+    /// 11. `[writable]` quote_vault_acc - MangoGroup quote vault acc
+    /// 12. `[]` dex_signer_acc - dex Market signer account
+    /// 13. `[]` spl token program
     SettleFunds,
 
     /// Cancel an order using dex instruction
@@ -296,8 +295,8 @@ impl MangoInstruction {
                 }
             },
             7 => {
-                let data_arr = array_ref![data, 0, 44];
-                let (market_i, v1_data_arr, v2_data_arr) = array_refs![data_arr, 8, 32, 4];
+                let data_arr = array_ref![data, 0, 36];
+                let (v1_data_arr, v2_data_arr) = array_refs![data_arr, 32, 4];
 
                 let v1_instr = unpack_dex_new_order_v1(v1_data_arr)?;
                 let self_trade_behavior = serum_dex::instruction::SelfTradeBehavior::try_from_primitive(
@@ -305,7 +304,6 @@ impl MangoInstruction {
                 ).ok()?;
                 let order = v1_instr.add_self_trade_behavior(self_trade_behavior);
                 MangoInstruction::PlaceOrder {
-                    market_i: usize::from_le_bytes(*market_i),
                     order
                 }
             },
@@ -424,17 +422,13 @@ pub fn init_margin_account(
     mango_group_pk: &Pubkey,
     margin_account_pk: &Pubkey,
     owner_pk: &Pubkey,
-    open_orders_pks: &Vec<Pubkey>
 ) -> Result<Instruction, ProgramError> {
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new_readonly(*mango_group_pk, false),
         AccountMeta::new(*margin_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
     ];
-    accounts.extend(open_orders_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
 
     let instr = MangoInstruction::InitMarginAccount;
     let data = instr.pack();
@@ -564,7 +558,7 @@ pub fn settle_borrow(
     token_index: usize,
     quantity: u64
 ) -> Result<Instruction, ProgramError> {
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
         AccountMeta::new(*margin_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
@@ -640,7 +634,6 @@ pub fn place_order(
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
     mint_pks: &[Pubkey],
-    market_i: usize,
     order: serum_dex::instruction::NewOrderInstructionV2
 ) -> Result<Instruction, ProgramError> {
 
@@ -670,7 +663,7 @@ pub fn place_order(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::PlaceOrder { market_i, order };
+    let instr = MangoInstruction::PlaceOrder { order };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
@@ -686,41 +679,32 @@ pub fn settle_funds(
     owner_pk: &Pubkey,
     margin_account_pk: &Pubkey,
     dex_prog_id: &Pubkey,
+    spot_market_pk: &Pubkey,
+    open_orders_pk: &Pubkey,
     signer_pk: &Pubkey,
+    dex_base_pk: &Pubkey,
+    dex_quote_pk: &Pubkey,
+    base_vault_pk: &Pubkey,
+    quote_vault_pk: &Pubkey,
     dex_signer_pk: &Pubkey,
-    open_orders_pks: &[Pubkey],
-    spot_market_pks: &[Pubkey],
-    dex_base_pks: &[Pubkey],
-    dex_quote_pks: &[Pubkey],
-    vault_pks: &[Pubkey]
 ) -> Result<Instruction, ProgramError> {
 
-    let mut accounts = vec![
+    let accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
         AccountMeta::new(*margin_account_pk, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
         AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*open_orders_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new(*dex_base_pk, false),
+        AccountMeta::new(*dex_quote_pk, false),
+        AccountMeta::new(*base_vault_pk, false),
+        AccountMeta::new(*quote_vault_pk, false),
         AccountMeta::new_readonly(*dex_signer_pk, false),
         AccountMeta::new_readonly(spl_token::ID, false),
     ];
-
-    accounts.extend(open_orders_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
-    );
-    accounts.extend(spot_market_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
-    );
-    accounts.extend(dex_base_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
-    );
-    accounts.extend(dex_quote_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
-    );
-    accounts.extend(vault_pks.iter().map(
-        |pk| AccountMeta::new(*pk, false))
-    );
 
     let instr = MangoInstruction::SettleFunds;
     let data = instr.pack();
