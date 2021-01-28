@@ -23,11 +23,11 @@ async function main() {
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
   // TODO auto fetch
-  const marginAccountPk = new PublicKey("49x7kYonP6DxpmHsnbrcwbZm5Nb1WbFSddzGPnyUpKm1")
+  const marginAccountPk = new PublicKey("58hhPAgRgk1BHM1UkvYnJfxpMcoyi3DSoKnkwxuFe47")
   let marginAccount = await client.getMarginAccount(connection, marginAccountPk)
-  for (let i = 0; i < NUM_TOKENS; i++) {
-    console.log(marginAccount.deposits[i].toString(), marginAccount.borrows[i].toString(), marginAccount.positions[i].toString())
-  }
+
+  console.log(marginAccount.toPrettyString(mangoGroup))
+
   const marketIndex = 0  // index for BTC/USDC
   const spotMarket = await Market.load(
     connection,
@@ -44,8 +44,8 @@ async function main() {
     marginAccount,
     spotMarket,
     payer,
-    'buy',
-    33000,
+    'sell',
+    30000,
     0.1
   )
 
@@ -60,10 +60,11 @@ async function main() {
     spotMarket
   )
 
+  await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[2], 5000)
+  await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[0], 1.0)
+
   marginAccount = await client.getMarginAccount(connection, marginAccount.publicKey)
-  for (let i = 0; i < NUM_TOKENS; i++) {
-    console.log(marginAccount.deposits[i].toString(), marginAccount.borrows[i].toString(), marginAccount.positions[i].toString())
-  }
+  console.log(marginAccount.toPrettyString(mangoGroup))
 }
 
 main();

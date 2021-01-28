@@ -122,12 +122,11 @@ impl MangoGroup {
 
         Ok(mango_group)
     }
-    #[allow(dead_code)]
-    fn load_checked<'a>(
+    pub fn load_checked<'a>(
         account: &'a AccountInfo,
         program_id: &Pubkey
     ) -> MangoResult<Ref<'a, Self>> {
-        prog_assert_eq!(account.data_len(), size_of::<Self>())?;
+        prog_assert_eq!(account.data_len(), size_of::<Self>())?;  // TODO not necessary check
         prog_assert_eq!(account.owner, program_id)?;
 
         let mango_group = Self::load(account)?;
@@ -151,8 +150,8 @@ impl MangoGroup {
         if native_deposits < native_borrows || native_deposits == 0 {
             return max_r;  // kind of an error state
         }
-        let utilization = native_borrows / native_deposits;
 
+        let utilization = native_borrows / native_deposits;
         if utilization > optimal_util {
             let extra_util = utilization - optimal_util;
             let slope = (max_r - optimal_r) / (U64F64::from_num(1) - optimal_util);
@@ -186,7 +185,6 @@ impl MangoGroup {
             index.last_update = curr_ts;
             index.borrow += index.borrow * borrow_interest;
             index.deposit += index.deposit * deposit_interest;
-
         }
         Ok(())
     }
@@ -233,9 +231,8 @@ pub struct MarginAccount {
     // this will be incremented every time an order is opened and decremented when order is closed
     pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
-    pub positions: [u64; NUM_TOKENS],  // the positions held by the user
+    // pub positions: [u64; NUM_TOKENS],  // the positions held by the user
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
-
 }
 impl_loadable!(MarginAccount);
 
@@ -324,11 +321,14 @@ impl MarginAccount {
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_deposits = index.deposit.checked_mul(self.deposits[i]).unwrap();
 
-            assets = native_deposits
-                .checked_add(U64F64::from_num(self.positions[i])).unwrap()
-                .checked_mul(prices[i]).unwrap()
-                .checked_add(assets).unwrap();
+            // assets = native_deposits
+            //     .checked_add(U64F64::from_num(self.positions[i])).unwrap()
+            //     .checked_mul(prices[i]).unwrap()
+            //     .checked_add(assets).unwrap();
 
+            assets = native_deposits
+                .checked_mul(prices[i]).unwrap()
+                .checked_add(assets).unwrap()
         }
         Ok(assets)
 
@@ -381,12 +381,12 @@ impl MarginAccount {
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
-    pub fn checked_add_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
-        Ok(self.positions[token_i] = self.positions[token_i].checked_add(v).ok_or(throw!())?)
-    }
-    pub fn checked_sub_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
-        Ok(self.positions[token_i] = self.positions[token_i].checked_sub(v).ok_or(throw!())?)
-    }
+    // pub fn checked_add_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
+    //     Ok(self.positions[token_i] = self.positions[token_i].checked_add(v).ok_or(throw!())?)
+    // }
+    // pub fn checked_sub_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
+    //     Ok(self.positions[token_i] = self.positions[token_i].checked_sub(v).ok_or(throw!())?)
+    // }
 
 }
 

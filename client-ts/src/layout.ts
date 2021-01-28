@@ -144,7 +144,7 @@ export const MarginAccountLayout = struct([
 
   seq(U64F64(), NUM_TOKENS, 'deposits'),
   seq(U64F64(), NUM_TOKENS, 'borrows'),
-  seq(u64(), NUM_TOKENS, 'positions'),
+  // seq(u64(), NUM_TOKENS, 'positions'),
   seq(publicKeyLayout(), NUM_MARKETS, 'openOrders')
 ]);
 

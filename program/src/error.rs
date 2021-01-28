@@ -26,7 +26,7 @@ pub struct AssertionError {
 
 impl Display for AssertionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AssertionError(file: {:?} line: {})", self.file_id, self.line)
+        write!(f, "AssertionError(file: {:?} line: {})", self.source(), self.line)
     }
 }
 impl Error for AssertionError {}
@@ -42,7 +42,7 @@ pub enum MangoError {
     #[error(transparent)]
     ProgramError(#[from] ProgramError),
     #[error(transparent)]
-    MangoErrorCode(#[from] MangoErrorCode),  // Just wraps MangoErrorCode into MangoError::ErrorCode
+    MangoErrorCode(#[from] MangoErrorCode),  // Just wraps MangoErrorCode into MangoError::MangoErrorCode
     #[error(transparent)]
     AssertionError(#[from] AssertionError)
 }

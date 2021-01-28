@@ -241,7 +241,7 @@ fn run_liquidator(
             println!("{} {} {}", pk, margin_account.owner, coll_ratio);
             println!("{} {} {}", margin_account.deposits[0], margin_account.deposits[1], margin_account.deposits[2]);
             println!("{} {} {}", margin_account.borrows[0], margin_account.borrows[1], margin_account.borrows[2]);
-            println!("{} {} {}\n", margin_account.positions[0], margin_account.positions[1], margin_account.positions[2]);
+            // println!("{} {} {}\n", margin_account.positions[0], margin_account.positions[1], margin_account.positions[2]);
 
             if coll_ratio < mango_group.maint_coll_ratio && coll_ratio >= min_coll_ratio {
                 // determine how much to deposit to get the account above init coll ratio
@@ -792,10 +792,10 @@ pub fn start(opts: Opts) -> Result<()> {
                 println!("{} {}", tokens[i], margin_account.deposits[i] * mango_group.indexes[i].deposit);
             }
 
-            println!("positions");
-            for i in 0..NUM_TOKENS {
-                println!("{} {}", tokens[i], margin_account.positions[i]);
-            }
+            // println!("positions");
+            // for i in 0..NUM_TOKENS {
+            //     println!("{} {}", tokens[i], margin_account.positions[i]);
+            // }
 
             println!("borrows");
             for i in 0..NUM_TOKENS {
@@ -835,7 +835,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
 
             let quantity = match quantity {
-                None => margin_account.positions[token_i],
+                None => unimplemented!(),
                 Some(q) => spl_token::ui_amount_to_amount(q, mint.decimals)
             };
             let instruction = settle_borrow(
