@@ -3,16 +3,13 @@
 
   "compilerOptions": {
     "outDir": "./dist",
-    "module": "commonjs",
     "allowJs": true,
     "checkJs": true,
     "declaration": true,
     "declarationMap": true,
     "noImplicitAny": false,
     "resolveJsonModule": true,
-    "sourceMap": true,
-    "esModuleInterop": true,
-    "target": "ES6"
+    "sourceMap": true
   },
   "include": ["./src/**/*"],
   "exclude": ["./src/**/*.test.js", "node_modules", "**/node_modules"]

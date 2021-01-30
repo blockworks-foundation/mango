@@ -1,7 +1,9 @@
+use std::cmp;
 use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
 use fixed::types::U64F64;
+use serum_dex::matching::Side;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
@@ -16,11 +18,8 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, check_open_orders};
+use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
-use std::cmp;
-use serum_dex::matching::Side;
-
 
 macro_rules! prog_assert {
     ($cond:expr) => {
@@ -709,6 +708,7 @@ impl Processor {
         Ok(())
     }
 
+    // Once it is settled build back
     fn cancel_order(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -869,15 +869,16 @@ pub fn get_prices(
         let mint = Mint::unpack(&mint_accs[i].try_borrow_data()?)?;
 
         let base_adj = U64F64::from_num(10u64.pow(mint.decimals as u32));
-        prices[i] = value * (quote_adj / base_adj);
+        prices[i] = quote_adj
+            .checked_div(base_adj).unwrap()
+            .checked_mul(value).unwrap();
+
         // TODO: checked mul, checked div
         // n UI USDC / 1 UI coin
         // mul 10 ^ (quote decimals - oracle decimals) / 10 ^ (base decimals)
     }
     Ok(prices)
 }
-
-
 
 /*
 TODO

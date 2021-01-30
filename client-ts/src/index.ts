@@ -67,4 +67,33 @@ async function main() {
   console.log(marginAccount.toPrettyString(mangoGroup))
 }
 
-main();
+async function testAll() {
+  const cluster = "devnet"
+  const client = new MangoClient()
+  const clusterIds = IDS[cluster]
+
+  const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
+  const mangoGroupPk = new PublicKey(clusterIds.mango_groups.BTC_ETH_USDC.mango_group_pk);
+  const mangoProgramId = new PublicKey(clusterIds.mango_program_id);
+
+  const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk);
+
+  const keyPairPath = '/home/dd/.config/solana/id.json'
+  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+
+  // TODO auto fetch
+  const marginAccounts = await client.getMarginAccountsForOwner(connection, mangoProgramId, mangoGroup, payer)
+  for (const x of marginAccounts) {
+    // get value of each margin account and select highest
+
+    console.log(x.publicKey.toBase58())
+  }
+
+}
+
+
+async function runLiquidator() {
+
+}
+
+testAll()

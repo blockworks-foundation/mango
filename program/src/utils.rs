@@ -5,7 +5,6 @@ use serum_dex::critbit::SlabView;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-
 pub fn gen_signer_seeds<'a>(nonce: &'a u64, acc_pk: &'a Pubkey) -> [&'a [u8]; 2] {
     [acc_pk.as_ref(), bytes_of(nonce)]
 }
@@ -28,7 +27,6 @@ pub fn create_signer_key_and_nonce(program_id: &Pubkey, acc_pk: &Pubkey) -> (Pub
         }
     }
     panic!("Could not generate signer key");
-
 }
 
 
