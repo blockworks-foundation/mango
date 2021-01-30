@@ -1,9 +1,14 @@
 {
-  "name": "@mango/client-ts",
-  "version": "0.0.1",
-  "description": "Library for interacting with Mango",
+  "name": "@mango/client",
+  "version": "0.1.0",
+  "description": "Library for interacting with Mango Margin solana smart contracts.",
+  "repository": "blockworks-foundation/mango",
+  "author": {
+    "name": "Blockworks Foundation",
+    "email": "hello@blockworks.foundation",
+    "url": "https://blockworks.foundation"
+   },
   "main": "lib/index.js",
-  "repository": "mango/client-ts",
   "source": "src/index.js",
   "types": "lib/index.d.ts",
   "license": "MIT",
