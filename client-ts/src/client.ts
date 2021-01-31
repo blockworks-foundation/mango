@@ -407,7 +407,8 @@ export class MangoClient {
     // TODO allow wrapped SOL wallets
     // TODO allow fee discounts
 
-    orderType = orderType ?? 'limit'
+    orderType = orderType == undefined ? 'limit' : orderType
+    // orderType = orderType ?? 'limit'
     const limitPrice = spotMarket.priceNumberToLots(price)
     const maxQuantity = spotMarket.baseSizeNumberToLots(size)
     if (maxQuantity.lte(new BN(0))) {
@@ -616,7 +617,7 @@ export class MangoClient {
     programId: PublicKey,
     mangoGroup: MangoGroup,
     owner: Account | Wallet
-  ): Promise<any[]> {
+  ): Promise<MarginAccount[]> {
 
     const filters = [
       {

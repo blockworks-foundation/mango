@@ -7,8 +7,9 @@ import { NUM_TOKENS } from './layout';
 export { MangoClient, MangoGroup, MarginAccount } from './client';
 export { MangoIndexLayout, MarginAccountLayout, MangoGroupLayout } from './layout';
 export { NUM_TOKENS } from './layout';
-export { IDS } from "./ids.json";
 
+import IDS from "./ids.json";
+export { IDS }
 
 //
 // async function main() {
