@@ -13,7 +13,7 @@ import {
 import {
   encodeMangoInstruction,
   MangoGroupLayout,
-  MarginAccountLayout,
+  MarginAccountLayout, NUM_TOKENS,
   WideBits,
 } from './layout';
 import BN from 'bn.js';
@@ -92,6 +92,7 @@ export class MarginAccount {
   borrows!: number[];
   openOrders!: PublicKey[];
 
+  openOrdersAccounts: undefined | (OpenOrders | undefined)[]  // undefined if an openOrdersAccount not yet initialized and has zeroKey
   constructor(publicKey: PublicKey, decoded: any) {
     this.publicKey = publicKey;
     Object.assign(this, decoded);
@@ -110,6 +111,21 @@ export class MarginAccount {
     return nativeToUi(this.getNativeBorrow(mangoGroup, tokenIndex), mangoGroup.mintDecimals[tokenIndex])
   }
 
+
+  async loadOpenOrders(
+    connection: Connection,
+    dexProgramId: PublicKey
+  ): Promise<(OpenOrders | undefined)[]> {
+    const promises: Promise<OpenOrders | undefined>[] = []
+    for (let i = 0; i < this.openOrders.length; i++) {
+      if (this.openOrders[i].equals(zeroKey)) {
+        promises.push(promiseUndef())
+      } else {
+        promises.push(OpenOrders.load(connection, this.openOrders[i], dexProgramId))
+      }
+    }
+    return Promise.all(promises)
+  }
   toPrettyString(
     mangoGroup: MangoGroup
   ): string {
@@ -132,16 +148,28 @@ export class MarginAccount {
     connection: Connection,
     mangoGroup: MangoGroup
   ): Promise<number> {
-    const prices = mangoGroup.getPrices(connection)
+    const prices = await mangoGroup.getPrices(connection)
 
+    let value = 0
     for (let i = 0; i < this.deposits.length; i++) {
-      // load the open orders
-
-
+      value += (this.getUiDeposit(mangoGroup, i) - this.getUiBorrow(mangoGroup, i))  * prices[i]
 
     }
 
-    return 0
+    if (this.openOrdersAccounts == undefined) {
+      return value
+    }
+
+    for (let i = 0; i < this.openOrdersAccounts.length; i++) {
+      const oos = this.openOrdersAccounts[i]
+      if (oos != undefined) {
+        value += nativeToUi(oos.baseTokenTotal.toNumber(), mangoGroup.mintDecimals[i]) * prices[i]
+        value += nativeToUi(oos.quoteTokenTotal.toNumber(), mangoGroup.mintDecimals[NUM_TOKENS-1])
+      }
+
+    }
+
+    return value
 
   }
 }
@@ -575,7 +603,7 @@ export class MangoClient {
     mangoGroupPk: PublicKey
   ): Promise<MangoGroup> {
     const acc = await connection.getAccountInfo(mangoGroupPk);
-    const decoded = MangoGroupLayout.decode(acc?.data);
+    const decoded = MangoGroupLayout.decode(acc == null ? undefined : acc.data);
     const mintDecimals: number[] = await Promise.all(decoded.tokens.map( (pk) => getMintDecimals(connection, pk) ))
     return new MangoGroup(mangoGroupPk, mintDecimals, decoded);
   }
@@ -585,7 +613,7 @@ export class MangoClient {
     marginAccountPk: PublicKey
   ): Promise<MarginAccount> {
     const acc = await connection.getAccountInfo(marginAccountPk, 'singleGossip')
-    return new MarginAccount(marginAccountPk, MarginAccountLayout.decode(acc?.data))
+    return new MarginAccount(marginAccountPk, MarginAccountLayout.decode(acc == null ? undefined : acc.data))
   }
   async getAllMarginAccounts(
     connection: Connection,
@@ -608,7 +636,7 @@ export class MangoClient {
     const accounts = await getFilteredProgramAccounts(connection, programId, filters);
     return accounts.map(
       ({ publicKey, accountInfo }) =>
-        new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo?.data))
+        new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo == null ? undefined : accountInfo.data))
     );
   }
 
@@ -642,7 +670,7 @@ export class MangoClient {
     const accounts = await getFilteredProgramAccounts(connection, programId, filters);
     return accounts.map(
       ({ publicKey, accountInfo }) =>
-        new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo?.data))
+        new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo == null ? undefined : accountInfo.data))
     );
   }
 }
@@ -700,4 +728,9 @@ async function getFilteredProgramAccounts(
       },
     }),
   );
+}
+
+
+async function promiseUndef(): Promise<undefined> {
+  return undefined
 }
