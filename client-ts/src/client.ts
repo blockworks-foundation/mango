@@ -111,7 +111,6 @@ export class MarginAccount {
     return nativeToUi(this.getNativeBorrow(mangoGroup, tokenIndex), mangoGroup.mintDecimals[tokenIndex])
   }
 
-
   async loadOpenOrders(
     connection: Connection,
     dexProgramId: PublicKey
@@ -153,7 +152,6 @@ export class MarginAccount {
     let value = 0
     for (let i = 0; i < this.deposits.length; i++) {
       value += (this.getUiDeposit(mangoGroup, i) - this.getUiBorrow(mangoGroup, i))  * prices[i]
-
     }
 
     if (this.openOrdersAccounts == undefined) {
@@ -166,11 +164,9 @@ export class MarginAccount {
         value += nativeToUi(oos.baseTokenTotal.toNumber(), mangoGroup.mintDecimals[i]) * prices[i]
         value += nativeToUi(oos.quoteTokenTotal.toNumber(), mangoGroup.mintDecimals[NUM_TOKENS-1])
       }
-
     }
 
     return value
-
   }
 }
 
@@ -189,7 +185,7 @@ export class MangoClient {
     // TODO test on mainnet
 
     // if Wallet was provided, sign with wallet
-    if ((typeof payer) === Wallet) {
+    if ((typeof payer) === Wallet) {  // this doesn't work. Need to copy over from Omega
       // TODO test with wallet
       if (additionalSigners.length > 0) {
         transaction.partialSign(...additionalSigners)

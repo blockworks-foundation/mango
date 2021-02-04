@@ -429,7 +429,13 @@ impl Processor {
             &mango_group, &prices, open_orders_accs)?;
 
         // No liquidations if account above maint collateral ratio
-        prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;  // TODO what to do if coll ratio falls below 1
+        prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
+
+        // if coll_ratio below 1, socialize the losses in the account
+        // deposit enough funds in the account such that coll ratio goes above 101 before liquidator dep
+        // reduce the index.deposit by "needed"
+        //
+
 
         // Pull deposits from liqor's token wallets
         for i in 0..NUM_TOKENS {
@@ -476,6 +482,10 @@ impl Processor {
         order: serum_dex::instruction::NewOrderInstructionV2
     ) -> MangoResult<()> {
         // TODO if account is below init_margin_ratio then allow reducing orders
+        // what counts as a reducing order?
+        // when you are trying to buy an asset in which you have a net borrow position
+            // there must necessarily be at least one where you have a net borrow position
+
         const NUM_FIXED: usize = 13;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + NUM_TOKENS];
         let (
@@ -594,11 +604,30 @@ impl Processor {
             mango_group.checked_add_borrow(token_i, rem_spend / index.borrow)?;
         }
 
+        // TODO optimize redundant calculations
         let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
 
-        prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;  // TODO allow orders that reduce position
+        if coll_ratio < mango_group.init_coll_ratio { // only allow this if it reduces position
+            let assets = margin_account.get_total_assets(&mango_group, open_orders_accs)?;
+            let liabs = margin_account.get_total_liabs(&mango_group)?;
 
+            if token_i == NUM_MARKETS {  // means this is a bid
+                // means we are increasing market_i pos
+                // make sure market_i pos is already net borrowed
+                // strictest req make sure base currency is net borrowed
+                // strictest req make sure quote currency is not net borrowed
+                // TODO see if these reqs can be relaxed
+                prog_assert!(assets[market_i] < liabs[market_i] && assets[NUM_MARKETS] >= liabs[NUM_MARKETS])?;
+
+            } else {  // means this is offer,
+                // strictest req make sure quote currency is net borrowed
+                // strictest req make sure base currency not net borrowed
+                prog_assert!(assets[NUM_MARKETS] < liabs[NUM_MARKETS] && assets[market_i] >= liabs[market_i])?;
+            }
+        }
+
+        prog_assert!(mango_group.has_valid_deposits_borrows(token_i))?;
         Ok(())
     }
 

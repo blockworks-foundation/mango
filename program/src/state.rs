@@ -310,6 +310,40 @@ impl MarginAccount {
             Ok(assets / liabs)
         }
     }
+    pub fn get_total_assets(
+        &self,
+        mango_group: &MangoGroup,
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<[u64; NUM_TOKENS]> {
+        let mut assets = [0u64; NUM_TOKENS];
+
+        for i in 0..NUM_TOKENS {
+            assets[i] = self.get_native_deposit(&mango_group.indexes[i], i)
+                .checked_add(assets[i]).unwrap();
+        }
+        for i in 0..NUM_MARKETS {
+            if *open_orders_accs[i].key == Pubkey::default() {
+                continue;
+            }
+            let open_orders = load_open_orders(&open_orders_accs[i])?;
+
+            assets[i] = open_orders.native_coin_total.checked_add(assets[i]).unwrap();
+            assets[NUM_TOKENS-1] = open_orders.native_pc_total.checked_add(assets[NUM_TOKENS-1]).unwrap();
+        }
+        Ok(assets)
+    }
+
+    pub fn get_total_liabs(
+        &self,
+        mango_group: &MangoGroup
+    ) -> MangoResult<[u64; NUM_TOKENS]> {
+        let mut liabs = [0u64; NUM_TOKENS];
+        for i in 0.. NUM_TOKENS {
+            liabs[i] = self.get_native_borrow(&mango_group.indexes[i], i);
+        }
+        Ok(liabs)
+    }
+
     pub fn get_assets_val(
         &self,
         mango_group: &MangoGroup,
@@ -335,12 +369,6 @@ impl MarginAccount {
         for i in 0..NUM_TOKENS {  // add up the value in margin account deposits and positions
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_deposits = index.deposit.checked_mul(self.deposits[i]).unwrap();
-
-            // assets = native_deposits
-            //     .checked_add(U64F64::from_num(self.positions[i])).unwrap()
-            //     .checked_mul(prices[i]).unwrap()
-            //     .checked_add(assets).unwrap();
-
             assets = native_deposits
                 .checked_mul(prices[i]).unwrap()
                 .checked_add(assets).unwrap()
@@ -376,7 +404,6 @@ impl MarginAccount {
         } else {
             Ok((liabs * mango_group.init_coll_ratio - assets).to_num())
         }
-
     }
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()
@@ -396,13 +423,6 @@ impl MarginAccount {
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
-    // pub fn checked_add_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
-    //     Ok(self.positions[token_i] = self.positions[token_i].checked_add(v).ok_or(throw!())?)
-    // }
-    // pub fn checked_sub_position(&mut self, token_i: usize, v: u64) -> MangoResult<()> {
-    //     Ok(self.positions[token_i] = self.positions[token_i].checked_sub(v).ok_or(throw!())?)
-    // }
-
 }
 
 
