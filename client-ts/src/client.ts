@@ -80,6 +80,12 @@ export class MangoGroup {
     throw new Error("This token does not belong in this MangoGroup")
   }
 
+  getBorrowRate(tokenIndex: number): number {
+    return 0.0  // TODO
+  }
+  getDepositRate(tokenIndex: number): number {
+    return 0.0  // TODO
+  }
 }
 
 export class MarginAccount {
