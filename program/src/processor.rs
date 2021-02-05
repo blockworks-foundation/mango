@@ -428,14 +428,33 @@ impl Processor {
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
 
+
         // No liquidations if account above maint collateral ratio
         prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
 
-        // if coll_ratio below 1, socialize the losses in the account
-        // deposit enough funds in the account such that coll ratio goes above 101 before liquidator dep
-        // reduce the index.deposit by "needed"
-        //
+        // TODO need to SettleFunds or SettleBorrow first to make sure user is still liquidatable
 
+        // liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
+
+        if coll_ratio < U64F64::from_num(1) {
+            let liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
+            let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
+            let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
+
+            // reduction_val = amount of quote currency value to reduce liabilities by to get coll_ratio = 1.01
+            let reduction_val = liabs_val
+                .checked_sub(assets_val / U64F64::from_num(1.01)).unwrap();
+
+            for i in 0..NUM_TOKENS {
+                let proportion = U64F64::from_num(liabs[i])
+                    .checked_div(liabs_val).unwrap();
+
+                let token_reduce = proportion.checked_mul(reduction_val).unwrap();
+                Self::socialize_loss(&mut mango_group, &mut liqee_margin_account, i, token_reduce)?;
+                // TODO this will reduce deposits of liqee as well which could put actual value below; way to fix is to SettleBorrow first
+                // TODO Can socialize loss cause more liquidations?
+            }
+        }
 
         // Pull deposits from liqor's token wallets
         for i in 0..NUM_TOKENS {
@@ -475,6 +494,29 @@ impl Processor {
         Ok(())
     }
 
+
+    fn socialize_loss(
+        mango_group: &mut MangoGroup,
+        margin_account: &mut MarginAccount,
+        token_index: usize,
+        reduce_quantity_native: U64F64
+    ) -> MangoResult<()> {
+
+        // reduce borrow for this margin_account by appropriate amount
+        // decrease MangoIndex.deposit by appropriate amount
+
+        let quantity: U64F64 = reduce_quantity_native / mango_group.indexes[token_index].borrow;
+        margin_account.checked_sub_borrow(token_index, quantity)?;
+        mango_group.checked_sub_borrow(token_index, quantity)?;
+
+        let total_deposits = U64F64::from_num(mango_group.get_total_native_deposit(token_index));
+        let percentage_loss = reduce_quantity_native.checked_div(total_deposits).unwrap();
+        let index: &mut MangoIndex = &mut mango_group.indexes[token_index];
+        index.deposit = index.deposit
+            .checked_sub(percentage_loss.checked_mul(index.deposit).unwrap()).unwrap();
+
+        Ok(())
+    }
     #[inline(never)]
     fn place_order(
         program_id: &Pubkey,
