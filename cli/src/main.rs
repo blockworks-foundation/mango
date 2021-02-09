@@ -158,7 +158,7 @@ pub enum Command {
 impl Opts {
     fn client(&self) -> RpcClient {
         RpcClient::new_with_commitment(self.cluster.url().to_string(),
-                                       CommitmentConfig::single_gossip())
+                                       CommitmentConfig::confirmed())
     }
 }
 
@@ -198,7 +198,7 @@ fn run_liquidator(
         |pk| client.get_token_accounts_by_owner_with_commitment(
             &liqor_kp.pubkey(),
             TokenAccountsFilter::Mint(*pk),
-            CommitmentConfig::single_gossip()
+            CommitmentConfig::confirmed()
         ).unwrap().value[0].clone()
     ).collect();
     let liqor_token_account_pks: Vec<Pubkey> = liqor_token_accounts.iter().map(
@@ -548,7 +548,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let token_accounts = client.get_token_accounts_by_owner_with_commitment(
                 &payer.pubkey(),
                 TokenAccountsFilter::Mint(mint_pk),
-                CommitmentConfig::single_gossip()
+                CommitmentConfig::confirmed()
             )?.value;
             assert!(token_accounts.len() > 0);
             // Take first token account
@@ -672,7 +672,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let token_accounts = client.get_token_accounts_by_owner_with_commitment(
                 &payer.pubkey(),
                 TokenAccountsFilter::Mint(mint_pk),
-                CommitmentConfig::single_gossip()
+                CommitmentConfig::confirmed()
             )?.value;
             assert!(token_accounts.len() > 0);
             // Take first token account

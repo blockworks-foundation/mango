@@ -505,6 +505,7 @@ impl Processor {
         // reduce borrow for this margin_account by appropriate amount
         // decrease MangoIndex.deposit by appropriate amount
 
+        // TODO make sure there is enough funds to socialize losses
         let quantity: U64F64 = reduce_quantity_native / mango_group.indexes[token_index].borrow;
         margin_account.checked_sub_borrow(token_index, quantity)?;
         mango_group.checked_sub_borrow(token_index, quantity)?;

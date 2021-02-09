@@ -13,16 +13,16 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1.0.36"
 clap = "3.0.0-beta.2"
-solana-client = "1.5.4"
-solana-cli = "1.5.4"
-solana-sdk = "1.5.4"
+solana-client = "1.4.26"
+solana-cli = "1.4.26"
+solana-sdk = "1.4.26"
 mango = { version = "*", path = "../program", features=["no-entrypoint"] }
 spl-token = { version = "*", features=["no-entrypoint"] }
 serde_json = "1.0.60"
 chrono = "*"
 common = { version = "*", path = "../common" }
 serum_dex = { version = "*", git = "https://github.com/project-serum/serum-dex.git", features=["no-entrypoint", "client"] }
-flux-aggregator = { version = "^0.1", path = "/home/dd/solana-flux-aggregator/program", features=["program", "no-entrypoint"] }
+flux-aggregator = { version = "^0.1", git = "https://github.com/czl1378/solana-flux-aggregator.git", features=["program", "no-entrypoint"] }
 arrayref = "^0.3.6"
 
 fixed = { version = "=0.5.7" }

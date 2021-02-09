@@ -13,10 +13,6 @@
     "prepare": "run-s clean build",
     "shell": "node -e \"$(< shell)\" -i --experimental-repl-await"
   },
-  "repository": {
-    "type": "git",
-    "url": "git@168.235.108.190:dd/mango.git"
-  },
   "devDependencies": {
     "@tsconfig/node14": "^1.0.0",
     "@types/jest": "^26.0.9",
@@ -33,10 +29,11 @@
     "typescript": "^4.0.5"
   },
   "dependencies": {
-    "@mango/client-ts": "file:../client-ts",
+    "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git",
     "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.3",
-    "buffer-layout": "^1.2.0"
+    "buffer-layout": "^1.2.0",
+    "ts-node": "^9.1.1"
   },
   "files": [
     "lib"

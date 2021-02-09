@@ -265,10 +265,12 @@ dependencies = [
 [[package]]
 name = "flux-aggregator"
 version = "0.1.0"
+source = "git+https://github.com/czl1378/solana-flux-aggregator.git#1f53d15f4b6c0713a3065a665788b09eb0d68f93"
 dependencies = [
  "borsh",
  "borsh-derive",
  "byteorder",
+ "hex",
  "num-derive",
  "num-traits",
  "num_enum",
