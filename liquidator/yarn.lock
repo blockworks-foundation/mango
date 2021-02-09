@@ -499,14 +499,13 @@
 
 "@mango/client@git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git":
   version "0.1.0"
-  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#6e9cbd5003c907d3174bc445ed346046f559296d"
+  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#6fb4036e1ec1307adad8d5ad4b81607e03e7cda8"
   dependencies:
-    "@project-serum/serum" "^0.13.18"
+    "@project-serum/serum" "^0.13.20"
     "@project-serum/sol-wallet-adapter" "^0.1.4"
     "@solana/web3.js" "^0.90.0"
     bn.js "^5.1.2"
     buffer-layout "^1.2.0"
-    double.js "^1.0.14"
 
 "@nodelib/fs.scandir@2.1.4":
   version "2.1.4"
@@ -529,7 +528,7 @@
     "@nodelib/fs.scandir" "2.1.4"
     fastq "^1.6.0"
 
-"@project-serum/serum@^0.13.18":
+"@project-serum/serum@^0.13.20":
   version "0.13.20"
   resolved "https://registry.yarnpkg.com/@project-serum/serum/-/serum-0.13.20.tgz#a3f6d8637198a7ba758207b9b802af49f6c47175"
   integrity sha512-jSuWgK11FLgRV6VCWfsxiWxexJLEI2f57mR55e+PX53gnZHeXiIF61+M0Kr4XH2yHg5ZzpSHmVrSAO4lw2hygw==
@@ -1699,11 +1698,6 @@ domutils@^1.5.1:
     dom-serializer "0"
     domelementtype "1"
 
-double.js@^1.0.14:
-  version "1.0.15"
-  resolved "https://registry.yarnpkg.com/double.js/-/double.js-1.0.15.tgz#12720955a704b2dcc546493ef3dfa7fa5be15bb6"
-  integrity sha512-GPcQA1H+S6lHNCpG/10JC6jwk5hu6J+hNzeaambBh4HEOx7yNslCtrVkQiq0t++RDJGqSZq5GQ4UuxTmZCIglg==
-
 ecc-jsbn@~0.1.1:
   version "0.1.2"
   resolved "https://registry.yarnpkg.com/ecc-jsbn/-/ecc-jsbn-0.1.2.tgz#3a83a904e54353287874c564b7549386849a98c9"
@@ -2315,9 +2309,9 @@ globby@^11.0.1:
     slash "^3.0.0"
 
 graceful-fs@^4.1.2, graceful-fs@^4.1.6, graceful-fs@^4.1.9:
-  version "4.2.5"
-  resolved "https://registry.yarnpkg.com/graceful-fs/-/graceful-fs-4.2.5.tgz#bc18864a6c9fc7b303f2e2abdb9155ad178fbe29"
-  integrity sha512-kBBSQbz2K0Nyn+31j/w36fUfxkBW9/gfwRWdUY1ULReH3iokVJgddZAFcD1D0xlgTmFxJCbUkUclAlc6/IDJkw==
+  version "4.2.6"
+  resolved "https://registry.yarnpkg.com/graceful-fs/-/graceful-fs-4.2.6.tgz#ff040b2b0853b23c3d31027523706f1885d76bee"
+  integrity sha512-nTnJ528pbqxYanhpDYsi4Rd8MAeaBA67+RZ10CM1m3bTAVFEDcd5AuA4a6W5YkGZ1iNXHzZz8T6TBKLeBuNriQ==
 
 graceful-fs@^4.2.4:
   version "4.2.4"

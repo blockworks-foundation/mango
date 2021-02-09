@@ -421,7 +421,7 @@ impl Processor {
 
         for i in 0..NUM_MARKETS {
             prog_assert_eq!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
-            check_open_orders(&open_orders_accs[i], liqee_margin_account_acc.key)?;
+            check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
         }
 
         let prices = get_prices(&mango_group, mint_accs, oracle_accs)?;
@@ -589,7 +589,7 @@ impl Processor {
                 }
             } else {
                 prog_assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i])?;
-                check_open_orders(&open_orders_accs[i], margin_account_acc.key)?;
+                check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
             }
         }
 

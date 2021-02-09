@@ -26,7 +26,11 @@ pub struct AssertionError {
 
 impl Display for AssertionError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AssertionError(file: {:?} line: {})", self.source(), self.line)
+        let file_name = match self.file_id {
+            SourceFileId::Processor => "src/processor.rs",
+            SourceFileId::State => "src/state.rs"
+        };
+        write!(f, "AssertionError(file: {} line: {})", file_name, self.line)
     }
 }
 impl Error for AssertionError {}

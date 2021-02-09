@@ -1,9 +1,7 @@
-import { MangoClient, IDS, MangoGroup } from "@mango/client";
+import { IDS, MangoClient } from '@mango/client';
 
-import {
-  Connection,
-  PublicKey
-} from "@solana/web3.js";
+import { Account, Connection, PublicKey } from '@solana/web3.js';
+import * as fs from 'fs';
 
 async function main() {
   const client = new MangoClient()
@@ -16,13 +14,22 @@ async function main() {
   const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
   const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroupPk)
 
+  // TODO fetch these automatically
+  const keyPairPath = '/home/dd/.config/solana/id.json'
+  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+  const tokenWallets = [
+    new PublicKey("HLoPtihB8oETm1kkTpx17FEnXm7afQdS4hojTNvbg3Rg"),
+    new PublicKey("8ASVNBAo94RnJCABYybnkJnXGpBHan2svW3pRsKdbn7s"),
+    new PublicKey("GBBtcVE7WA8qdrHyhWTZkYDaz71EVHsg7wVaca9iq9xs")
+  ]
+
   // fetch open orders
   for (const ma of marginAccounts) {  // TODO load with websocket
     await ma.loadOpenOrders(connection, dexProgramId)
   }
   const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
   for (const ma of marginAccounts) {
-    console.log(ma.toPrettyString(mangoGroup))
+    console.log(ma.toPrettyString(mangoGroup), ma.owner.toBase58())
     const assetsVal = ma.getAssetsVal(mangoGroup, prices)
     const liabsVal = ma.getLiabsVal(mangoGroup, prices)
     if (liabsVal === 0) {
@@ -32,22 +39,27 @@ async function main() {
     console.log(assetsVal, liabsVal, collRatio)
 
     if (collRatio < mangoGroup.maintCollRatio) {
+
+      const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
+      console.log('liqdatable', deficit)
+
       // handle undercoll case separately
       if (collRatio < 1) {
-        throw new Error("Unimplemented")
+
         // Need to make sure there are enough funds in MangoGroup to be compensated fully
       }
 
 
       // determine how much to deposit to get the account above init coll ratio
-      const needed = assetsVal - liabsVal * mangoGroup.initCollRatio
 
+      await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
 
 
       // after depositing and receiving success, cancel outstanding open orders
       // place new orders to liquidate all positions into USDC
       // call settleBorrow on every open borrow
       // transfer assets out to own marginAccount
+
     }
 
   }
