@@ -164,10 +164,8 @@ impl MangoGroup {
 
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         let curr_ts = clock.unix_timestamp as u64;
-        let fee_adj = U64F64::from_num(19) / U64F64::from_num(20);
 
         for i in 0..NUM_TOKENS {
-
             let interest_rate = self.get_interest_rate(i);
             let index: &mut MangoIndex = &mut self.indexes[i];
             if index.last_update == curr_ts || self.total_deposits[i] == 0 {
@@ -179,27 +177,18 @@ impl MangoGroup {
             let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
             prog_assert!(native_borrows <= native_deposits)?;
 
-            // let utilization: U64F64 = native_borrows / native_deposits;
-            // let borrow_interest = interest_rate * U64F64::from_num(curr_ts - index.last_update);
-            // let deposit_interest = interest_rate * fee_adj * utilization;
-            // index.last_update = curr_ts;
-            // index.borrow += index.borrow * borrow_interest;
-            // index.deposit += index.deposit * deposit_interest;
-
             let utilization = native_borrows.checked_div(native_deposits).unwrap();
             let borrow_interest = interest_rate
                 .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
                 .checked_add(U64F64::from_num(1)).unwrap();
 
             let deposit_interest = interest_rate
-                .checked_mul(fee_adj).unwrap()
                 .checked_mul(utilization).unwrap()
                 .checked_add(U64F64::from_num(1)).unwrap();
 
             index.last_update = curr_ts;
             index.borrow = index.borrow.checked_mul(borrow_interest).unwrap();
             index.deposit = index.deposit.checked_mul(deposit_interest).unwrap();
-
         }
         Ok(())
     }

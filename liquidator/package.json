@@ -30,11 +30,11 @@
   },
   "dependencies": {
     "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git",
+    "@project-serum/serum": "^0.13.20",
     "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.3",
     "buffer-layout": "^1.2.0",
-    "ts-node": "^9.1.1",
-    "@project-serum/serum": "^0.13.20"
+    "ts-node": "^9.1.1"
   },
   "files": [
     "lib"
