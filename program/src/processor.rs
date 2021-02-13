@@ -364,6 +364,15 @@ impl Processor {
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
 
+        Self::settle_borrow_unchecked(&mut mango_group, &mut margin_account, token_index, quantity)
+    }
+
+    fn settle_borrow_unchecked(
+        mango_group: &mut MangoGroup,
+        margin_account: &mut MarginAccount,
+        token_index: usize,
+        quantity: u64
+    ) -> MangoResult<()> {
         let index: &MangoIndex = &mango_group.indexes[token_index];
 
         let native_borrow = margin_account.get_native_borrow(index, token_index);
@@ -381,6 +390,7 @@ impl Processor {
         // No need to check collateralization ratio or deposits/borrows validity
 
         Ok(())
+
     }
 
     fn liquidate(

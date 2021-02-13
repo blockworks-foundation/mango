@@ -51,7 +51,6 @@ async function main() {
         continue
       }
 
-
       const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
       console.log('liquidatable', deficit)
 
@@ -116,7 +115,6 @@ async function main() {
           console.log(`Sell to close ${marketIndex} ${size}`)
           await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'sell', price, size, 'limit')
 
-
         } else if (netValues[i][1] < 0) { // buy to close
           const price = prices[i] * 1.05  // buy at up to 5% higher than oracle price
           const size = liabs[i]
@@ -154,9 +152,8 @@ async function setupMarginAccounts() {
   const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk);
 
   // TODO auto fetch
-  const marginAccountPk = new PublicKey("3axUjRCrUtFaLeZuZ7obPENf3mWgA1LJVByWR7jbXqBR")
-  let marginAccount = await client.getMarginAccount(connection, marginAccountPk)
-  await marginAccount.loadOpenOrders(connection, dexProgramId)
+  const marginAccountPk = new PublicKey("6qiX5n1TTiv1R8GqAZUk1BaP7qFaPow6MoAqX6rrgEcg")
+  let marginAccount = await client.getCompleteMarginAccount(connection, marginAccountPk, dexProgramId)
 
   console.log(marginAccount.toPrettyString(mangoGroup))
 
@@ -170,18 +167,18 @@ async function setupMarginAccounts() {
   const prices = await mangoGroup.getPrices(connection)
   console.log(prices)
 
-  // // margin short 0.1 BTC
-  // await client.placeOrder(
-  //   connection,
-  //   mangoProgramId,
-  //   mangoGroup,
-  //   marginAccount,
-  //   spotMarket,
-  //   payer,
-  //   'sell',
-  //   30000,
-  //   0.1
-  // )
+  // margin short 0.1 BTC
+  await client.placeOrder(
+    connection,
+    mangoProgramId,
+    mangoGroup,
+    marginAccount,
+    spotMarket,
+    payer,
+    'sell',
+    100,
+    0.5
+  )
 
   await spotMarket.matchOrders(connection, payer, 10)
 
@@ -197,8 +194,7 @@ async function setupMarginAccounts() {
   // await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[2], 5000)
   // await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[0], 1.0)
 
-  marginAccount = await client.getMarginAccount(connection, marginAccountPk)
-  await marginAccount.loadOpenOrders(connection, dexProgramId)
+  marginAccount = await client.getCompleteMarginAccount(connection, marginAccountPk, dexProgramId)
 
   console.log(marginAccount.toPrettyString(mangoGroup))
 }
@@ -209,5 +205,5 @@ function sleep(ms) {
 }
 
 
-// setupMarginAccounts()
-main()
+setupMarginAccounts()
+// main()

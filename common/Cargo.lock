@@ -2629,9 +2629,9 @@ dependencies = [
 
 [[package]]
 name = "solana-crate-features"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8c91f6006ec135a011bd1239cd5f5c9fd86be6cf1dc0cbad5d9f873c43c6300"
+checksum = "85894a58111572a40ea391b5e0712fbca9df3b16b12f10edbdc0e9e204f101f4"
 dependencies = [
  "backtrace",
  "bytes 0.4.12",
@@ -2653,9 +2653,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d0c1cf7dafbcf4e1e0a56b7b28848bdf41a5e3065e9763d3aae892027109956"
+checksum = "a1ea85e6a6677c3888dd83d14e9b0dee8575619480af4484109d6c36256c80cb"
 dependencies = [
  "bs58 0.3.1",
  "bv",
@@ -2673,9 +2673,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi-macro"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb44325468e78e9e4535c90c656c36c953b42cd34ed4999d39f1d33b8780a545"
+checksum = "5c7c67ad9d35a18d5297b5c35899826e605c63ea31558799ca3ef12d4e6d53d4"
 dependencies = [
  "lazy_static",
  "proc-macro2 1.0.24",
@@ -2686,9 +2686,9 @@ dependencies = [
 
 [[package]]
 name = "solana-logger"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7a46715d2f6fda4697f640038fbd2a16645b10af81dbf2e5a19048c99b8a546"
+checksum = "69fda382cf80354fa98896120cdabe2c9e28ead53c3fa6e42c9ae5c78bbd7f46"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -2745,9 +2745,9 @@ dependencies = [
 
 [[package]]
 name = "solana-program"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb200f05cb93b01f6e9b2e0d94d240e7e5dfa0b14c4308713b236c01a525a0ef"
+checksum = "a02b852e088e49a8699c1d1b5d126987c457d36199f2bf142d87ac65e7992a52"
 dependencies = [
  "bincode",
  "bs58 0.3.1",
@@ -2856,9 +2856,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76916bdb129f99b5e6814901a36aa3baadd1b1d5ce4d8467bd36b012ddb37d8a"
+checksum = "ffcb3a6ef6a49a330d12cff7eb450c86384cf4f16ef0d0ec743325217455e629"
 dependencies = [
  "assert_matches",
  "bincode",
@@ -2900,9 +2900,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk-macro"
-version = "1.5.5"
+version = "1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d463f2a24e75ca02f065ac2a9ac855f661c8d0f8917090514d65e4f82cdf05ab"
+checksum = "6515ccfe86384b12d480a5aa876c80981aca122d863510a2eace63150e89e35d"
 dependencies = [
  "bs58 0.3.1",
  "proc-macro2 1.0.24",
