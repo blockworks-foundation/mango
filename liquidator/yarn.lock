@@ -506,7 +506,7 @@
 
 "@mango/client@git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git":
   version "0.1.0"
-  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#dd5e135fa6a2197684e90e31202f988bae780023"
+  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#a00feb1d94a9e3b0ad9ecf555a340a5b7d9b30e7"
   dependencies:
     "@project-serum/serum" "^0.13.20"
     "@project-serum/sol-wallet-adapter" "^0.1.4"

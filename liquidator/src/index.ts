@@ -4,6 +4,7 @@ import { Account, Connection, PublicKey, TransactionSignature } from '@solana/we
 import * as fs from 'fs';
 import { Market } from '@project-serum/serum';
 import { NUM_MARKETS } from '@mango/client/lib/layout';
+import { nativeToUi } from '@mango/client/lib/utils';
 
 async function main() {
   const client = new MangoClient()
@@ -35,36 +36,39 @@ async function main() {
     mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
     const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroupPk)
 
-    await Promise.all(marginAccounts.map((ma) => ma.loadOpenOrders(connection, dexProgramId)))
+    await Promise.all(marginAccounts.map((ma) => (ma.loadOpenOrders(connection, dexProgramId))))
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
 
     for (let ma of marginAccounts) {  // parallelize this if possible
-      console.log(ma.toPrettyString(mangoGroup), ma.owner.toBase58())
       const assetsVal = ma.getAssetsVal(mangoGroup, prices)
       const liabsVal = ma.getLiabsVal(mangoGroup, prices)
+      console.log(ma.toPrettyString(mangoGroup), ma.owner.toBase58())
+
       if (liabsVal === 0) {
         continue
       }
       const collRatio = assetsVal / liabsVal
       console.log(assetsVal, liabsVal, collRatio)
-      if (collRatio >= mangoGroup.maintCollRatio) {
-        continue
-      }
 
-      const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
-      console.log('liquidatable', deficit)
 
-      // handle undercoll case separately
-      if (collRatio < 1) {
-        // Need to make sure there are enough funds in MangoGroup to be compensated fully
-      }
-
-      // determine how much to deposit to get the account above init coll ratio
-      await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
-      ma = await client.getCompleteMarginAccount(connection, ma.publicKey, dexProgramId)
-
-      console.log('liquidation success')
-      console.log(ma.toPrettyString(mangoGroup))
+      // if (collRatio >= mangoGroup.maintCollRatio) {
+      //   continue
+      // }
+      //
+      // const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
+      // console.log('liquidatable', deficit)
+      //
+      // // handle undercoll case separately
+      // if (collRatio < 1) {
+      //   // Need to make sure there are enough funds in MangoGroup to be compensated fully
+      // }
+      //
+      // // determine how much to deposit to get the account above init coll ratio
+      // await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
+      // ma = await client.getCompleteMarginAccount(connection, ma.publicKey, dexProgramId)
+      //
+      // console.log('liquidation success')
+      // console.log(ma.toPrettyString(mangoGroup))
 
       // Cancel all open orders
       const bidsPromises = markets.map((market) => market.loadBids(connection))
@@ -110,14 +114,16 @@ async function main() {
         const market = markets[marketIndex]
 
         if (netValues[i][1] > 0) { // sell to close
-          const price = prices[i] * 0.95
-          const size = assets[i]
+          const price = prices[marketIndex] * 0.95
+          const size = assets[marketIndex]
           console.log(`Sell to close ${marketIndex} ${size}`)
           await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'sell', price, size, 'limit')
 
         } else if (netValues[i][1] < 0) { // buy to close
-          const price = prices[i] * 1.05  // buy at up to 5% higher than oracle price
-          const size = liabs[i]
+          const price = prices[marketIndex] * 1.05  // buy at up to 5% higher than oracle price
+          const size = liabs[marketIndex]
+          console.log(mangoGroup.getUiTotalDeposit(NUM_MARKETS), mangoGroup.getUiTotalBorrow(NUM_MARKETS))
+          console.log(ma.getUiDeposit(mangoGroup, NUM_MARKETS), ma.getUiBorrow(mangoGroup, NUM_MARKETS))
           console.log(`Buy to close ${marketIndex} ${size}`)
           await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'buy', price, size, 'limit')
         }
@@ -167,18 +173,18 @@ async function setupMarginAccounts() {
   const prices = await mangoGroup.getPrices(connection)
   console.log(prices)
 
-  // margin short 0.1 BTC
-  await client.placeOrder(
-    connection,
-    mangoProgramId,
-    mangoGroup,
-    marginAccount,
-    spotMarket,
-    payer,
-    'sell',
-    100,
-    0.5
-  )
+  // // margin short 0.1 BTC
+  // await client.placeOrder(
+  //   connection,
+  //   mangoProgramId,
+  //   mangoGroup,
+  //   marginAccount,
+  //   spotMarket,
+  //   payer,
+  //   'sell',
+  //   100,
+  //   0.5
+  // )
 
   await spotMarket.matchOrders(connection, payer, 10)
 
@@ -205,5 +211,5 @@ function sleep(ms) {
 }
 
 
-setupMarginAccounts()
-// main()
+// setupMarginAccounts()
+main()

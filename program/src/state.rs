@@ -11,7 +11,7 @@ use solana_program::clock::Clock;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-use crate::error::{check_assert, MangoResult, SourceFileId, AssertionError};
+use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
 
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
@@ -105,6 +105,9 @@ pub struct MangoGroup {
 
     pub maint_coll_ratio: U64F64,  // 1.10
     pub init_coll_ratio: U64F64,  //  1.20
+    pub mint_decimals: [u8; NUM_TOKENS],
+    pub oracle_decimals: [u8; NUM_MARKETS],
+
 }
 impl_loadable!(MangoGroup);
 
@@ -147,7 +150,7 @@ impl MangoGroup {
         let index: &MangoIndex = &self.indexes[token_index];
         let native_deposits = index.deposit * self.total_deposits[token_index];
         let native_borrows = index.borrow * self.total_borrows[token_index];
-        if native_deposits < native_borrows || native_deposits == 0 {
+        if native_deposits <= native_borrows {  // if deps == 0, this is always true
             return max_r;  // kind of an error state
         }
 
