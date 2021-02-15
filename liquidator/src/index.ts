@@ -10,8 +10,13 @@ async function main() {
   const client = new MangoClient()
   const cluster = 'devnet'
   const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
+
+  // The address of the Mango Program on the blockchain
   const programId = new PublicKey(IDS[cluster].mango_program_id)
+  // The address of the serum dex program on the blockchain: https://github.com/project-serum/serum-dex
   const dexProgramId = new PublicKey(IDS[cluster].dex_program_id)
+
+  // Address of the MangoGroup
   const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
 
 
@@ -211,5 +216,34 @@ function sleep(ms) {
 }
 
 
+async function testing() {
+  const client = new MangoClient()
+  const cluster = 'devnet'
+  const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
+
+  // The address of the Mango Program on the blockchain
+  const programId = new PublicKey(IDS[cluster].mango_program_id)
+  // The address of the serum dex program on the blockchain: https://github.com/project-serum/serum-dex
+  const dexProgramId = new PublicKey(IDS[cluster].dex_program_id)
+
+  // Address of the MangoGroup
+  const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
+
+
+  // TODO fetch these automatically
+  const keyPairPath = '/home/dd/.config/solana/id.json'
+  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+
+  let mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+  const totalBorrow = mangoGroup.getUiTotalBorrow(0)
+  const totalDeposit = mangoGroup.getUiTotalDeposit(0)
+
+  // save it in the database
+
+  mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+
+  await sleep(5000)
+}
 // setupMarginAccounts()
-main()
+// main()
+testing()
