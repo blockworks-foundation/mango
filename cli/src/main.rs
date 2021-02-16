@@ -211,7 +211,7 @@ fn run_liquidator(
         let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
         let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
 
-        let prices = get_prices(mango_group, mint_accs, oracle_accs)?;
+        let prices = get_prices(mango_group, oracle_accs)?;
 
         // fetch all margin accounts
         let config = RpcProgramAccountsConfig {
@@ -325,7 +325,7 @@ fn print_prices(
     let mint_accs = create_account_infos(mint_accs.as_mut_slice());
     let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
 
-    let prices = get_prices(mango_group, mint_accs, oracle_accs)?;
+    let prices = get_prices(mango_group, oracle_accs)?;
     let names: Vec<&str> = mango_group_name.split("_").collect();
     for i in 0..prices.len() {
         println!("{} {}", names[i], prices[i]);
@@ -429,6 +429,10 @@ pub fn start(opts: Opts) -> Result<()> {
                 |token| get_symbol_pk(symbols, token.as_str())
             ).collect();
 
+            let symbol_pks: HashMap<String, String> = tokens.iter().map(
+                |token| (token.clone(), get_symbol_pk(symbols, token.as_str()).to_string())
+            ).collect();
+
             // Create vaults owned by mango program id
             let mut vault_pks = vec![];
             for i in 0..mint_pks.len() {
@@ -481,7 +485,8 @@ pub fn start(opts: Opts) -> Result<()> {
                 "vault_pks": vault_pk_strs,
                 "mint_pks": mint_pk_strs,
                 "spot_market_pks": spot_market_pk_strs,
-                "oracle_pks": oracle_pk_strs
+                "oracle_pks": oracle_pk_strs,
+                "symbols": symbol_pks
             });
 
             let ids = ids.as_object_mut().unwrap();
@@ -783,7 +788,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let open_orders_accs = create_account_infos(open_orders_accs.as_mut_slice());
             let open_orders_accs = array_ref![open_orders_accs.as_slice(), 0, NUM_MARKETS];
 
-            let prices = get_prices(mango_group, mint_accs, oracle_accs)?;
+            let prices = get_prices(mango_group, oracle_accs)?;
 
             let equity = margin_account.get_equity(mango_group, &prices, open_orders_accs)?;
             println!("MarginAccount: {} | equity: {}", margin_account_pk, equity);

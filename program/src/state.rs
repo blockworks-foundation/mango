@@ -16,6 +16,7 @@ use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
 /// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
 pub const NUM_TOKENS: usize = 3;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
+pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
 pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
@@ -105,9 +106,13 @@ pub struct MangoGroup {
 
     pub maint_coll_ratio: U64F64,  // 1.10
     pub init_coll_ratio: U64F64,  //  1.20
+
+    // mango quantity 50m (index.deposit = 2)
+    // native quantity 100m
+    // ui quantity 100
     pub mint_decimals: [u8; NUM_TOKENS],
     pub oracle_decimals: [u8; NUM_MARKETS],
-
+    pub padding: [u8; MANGO_GROUP_PADDING]
 }
 impl_loadable!(MangoGroup);
 
@@ -143,7 +148,6 @@ impl MangoGroup {
 
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
-
         let optimal_util = U64F64::from_num(0.7);
         let optimal_r = U64F64::from_num(0.10) / U64F64::from_num(YEAR);  // opt 10%
         let max_r = U64F64::from_num(1) / U64F64::from_num(YEAR);  // max 100%

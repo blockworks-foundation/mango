@@ -245,5 +245,5 @@ async function testing() {
   await sleep(5000)
 }
 // setupMarginAccounts()
-// main()
-testing()
+main()
+// testing()
