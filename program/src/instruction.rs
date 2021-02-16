@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::num::NonZeroU64;
 
 use arrayref::{array_ref, array_refs};
-use bytemuck::{cast_slice, cast, cast_slice_mut};
+use bytemuck::{cast_slice, cast_slice_mut};
 use fixed::types::U64F64;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -67,9 +67,9 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    /// Withdraw funds that were deposited earlier.
+    ///*** Withdraw funds that were deposited earlier.
     ///
-    /// Accounts expected by this instruction (8 + 2 * NUM_MARKETS + NUM_TOKENS):
+    /// Accounts expected by this instruction (8 + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[writable]` margin_account_acc - the margin account for this user
@@ -82,16 +82,13 @@ pub enum MangoInstruction {
     /// 8..8+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 8+NUM_MARKETS..8+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
-    /// 9+2*NUM_MARKETS..9+2*NUM_MARKETS+NUM_TOKENS `[]`
-    ///     mint_accs - Mint account for each of the tokens
     Withdraw {
-        token_index: usize,
         quantity: u64
     },
 
-    /// Borrow by incrementing MarginAccount.borrows given collateral ratio is below init_coll_rat
+    /// ***Borrow by incrementing MarginAccount.borrows given collateral ratio is below init_coll_rat
     ///
-    /// Accounts expected by this instruction (4 + 2 * NUM_MARKETS + NUM_TOKENS):
+    /// Accounts expected by this instruction (4 + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[writable]` margin_account_acc - the margin account for this user
@@ -100,8 +97,6 @@ pub enum MangoInstruction {
     /// 4..4+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 4+NUM_MARKETS..4+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
-    /// 4+2*NUM_MARKETS..4+2*NUM_MARKETS+NUM_TOKENS `[]`
-    ///     mint_accs - Mint account for each of the tokens
     Borrow {
         token_index: usize,
         quantity: u64
@@ -120,9 +115,9 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
+    /// ***Take over a MarginAccount that is below init_coll_ratio by depositing funds
     ///
-    /// Accounts expected by this instruction (5 + 2 * NUM_MARKETS + 3 * NUM_TOKENS):
+    /// Accounts expected by this instruction (5 + 2 * NUM_MARKETS + 2 * NUM_TOKENS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` liqor_acc - liquidator's solana account
@@ -136,17 +131,15 @@ pub enum MangoInstruction {
     ///     vault_accs - MangoGroup vaults
     /// 5+2*NUM_MARKETS+NUM_TOKENS..5+2*NUM_MARKETS+2*NUM_TOKENS `[writable]`
     ///     liqor_token_account_accs - Liquidator's token wallets
-    /// 5+2*NUM_MARKETS+2*NUM_TOKENS..5+2*NUM_MARKETS+3*NUM_TOKENS `[]`
-    ///     mint_accs - Mint account for each of the tokens
     Liquidate {
         /// Quantity of each token liquidator is depositing in order to bring account above maint
         deposit_quantities: [u64; NUM_TOKENS]
     },
 
     // Proxy instructions to Dex
-    /// Place an order on the Serum Dex using Mango margin facilities
+    /// ***Place an order on the Serum Dex using Mango margin facilities
     ///
-    /// Accounts expected by this instruction (13 + 2 * NUM_MARKETS + NUM_TOKENS):
+    /// Accounts expected by this instruction (16 + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` owner_acc - MarginAccount owner
@@ -155,6 +148,9 @@ pub enum MangoInstruction {
     /// 4. `[]` dex_prog_acc - program id of serum dex
     /// 5. `[writable]` spot_market_acc - serum dex MarketState
     /// 6. `[writable]` dex_request_queue_acc - serum dex request queue for this market
+    /// 6. `[writable]` dex_event_queue - serum dex event queue for this market
+    /// 6. `[writable]` bids_acc - serum dex bids for this market
+    /// 6. `[writable]` asks_acc - serum dex asks for this market
     /// 7. `[writable]` vault_acc - mango's vault for this currency (quote if buying, base if selling)
     /// 8. `[]` signer_acc - mango signer key
     /// 9. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
@@ -164,10 +160,8 @@ pub enum MangoInstruction {
     /// 13..13+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
     /// 13+NUM_MARKETS..13+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
-    /// 13+2*NUM_MARKETS..13+2*NUM_MARKETS+NUM_TOKENS `[]`
-    ///     mint_accs - Mint account for each of the tokens
     PlaceOrder {
-        order: serum_dex::instruction::NewOrderInstructionV2
+        order: serum_dex::instruction::NewOrderInstructionV3
     },
 
     /// Settle all funds from serum dex open orders into MarginAccount positions
@@ -190,9 +184,9 @@ pub enum MangoInstruction {
     /// 13. `[]` spl token program
     SettleFunds,
 
-    /// Cancel an order using dex instruction
+    /// ***Cancel an order using dex instruction
     ///
-    /// Accounts expected by this instruction (9):
+    /// Accounts expected by this instruction (11):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` owner_acc - MarginAccount owner
@@ -200,17 +194,19 @@ pub enum MangoInstruction {
     /// 3. `[]` clock_acc - Clock sysvar account
     /// 4. `[]` dex_prog_acc - program id of serum dex
     /// 5. `[writable]` spot_market_acc - serum dex MarketState
-    /// 6. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
-    /// 7. `[writable]` dex_request_queue_acc - serum dex request queue for this market
-    /// 8. `[]` signer_acc - MangoGroup signer key
+    /// 6. `[writable]` bids_acc - serum dex bids
+    /// 7. `[writable]` asks_acc - serum dex asks
+    /// 8. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
+    /// 9. `[]` signer_acc - MangoGroup signer key
+    /// 10. `[writable]` dex_event_queue_acc - serum dex event queue for this market
+
     CancelOrder {
-        order: serum_dex::instruction::CancelOrderInstruction
+        order: serum_dex::instruction::CancelOrderInstructionV2
     },
 
-
-    /// Cancel an order using dex instruction
+    /// ***Cancel an order using client_id
     ///
-    /// Accounts expected by this instruction (9):
+    /// Accounts expected by this instruction (11):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` owner_acc - MarginAccount owner
@@ -218,9 +214,11 @@ pub enum MangoInstruction {
     /// 3. `[]` clock_acc - Clock sysvar account
     /// 4. `[]` dex_prog_acc - program id of serum dex
     /// 5. `[writable]` spot_market_acc - serum dex MarketState
-    /// 6. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
-    /// 7. `[writable]` dex_request_queue_acc - serum dex request queue for this market
-    /// 8. `[]` signer_acc - MangoGroup signer key
+    /// 6. `[writable]` bids_acc - serum dex bids
+    /// 7. `[writable]` asks_acc - serum dex asks
+    /// 8. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
+    /// 9. `[]` signer_acc - MangoGroup signer key
+    /// 10. `[writable]` dex_event_queue_acc - serum dex event queue for this market
     CancelOrderByClientId {
         client_id: u64
     },
@@ -254,12 +252,9 @@ impl MangoInstruction {
                 MangoInstruction::Deposit { quantity: u64::from_le_bytes(*quantity) }
             },
             3 => {
-                let data = array_ref![data, 0, 16];
-                let (token_index, quantity) = array_refs![data, 8, 8];
-
+                let data = array_ref![data, 0, 8];
                 MangoInstruction::Withdraw {
-                    token_index: usize::from_le_bytes(*token_index),
-                    quantity: u64::from_le_bytes(*quantity)
+                    quantity: u64::from_le_bytes(*data)
                 }
             },
             4 => {
@@ -295,37 +290,28 @@ impl MangoInstruction {
                 }
             },
             7 => {
-                let data_arr = array_ref![data, 0, 36];
-                let (v1_data_arr, v2_data_arr) = array_refs![data_arr, 32, 4];
-
-                let v1_instr = unpack_dex_new_order_v1(v1_data_arr)?;
-                let self_trade_behavior = serum_dex::instruction::SelfTradeBehavior::try_from_primitive(
-                    u32::from_le_bytes(*v2_data_arr).try_into().ok()?,
-                ).ok()?;
-                let order = v1_instr.add_self_trade_behavior(self_trade_behavior);
+                let data_arr = array_ref![data, 0, 46];
+                let order = unpack_dex_new_order_v3(data_arr)?;
                 MangoInstruction::PlaceOrder {
                     order
                 }
+
             },
             8 => {
                 MangoInstruction::SettleFunds
             },
             9 => {
-                let data_array = array_ref![data, 0, 53];
-                let fields = array_refs![data_array, 4, 16, 32, 1];
+                let data_array = array_ref![data, 0, 20];
+                let fields = array_refs![data_array, 4, 16];
                 let side = match u32::from_le_bytes(*fields.0) {
                     0 => serum_dex::matching::Side::Bid,
                     1 => serum_dex::matching::Side::Ask,
                     _ => return None,
                 };
                 let order_id = u128::from_le_bytes(*fields.1);
-                let owner = cast(*fields.2);
-                let &[owner_slot] = fields.3;
-                let order = serum_dex::instruction::CancelOrderInstruction {
+                let order = serum_dex::instruction::CancelOrderInstructionV2 {
                     side,
                     order_id,
-                    owner,
-                    owner_slot,
                 };
 
                 MangoInstruction::CancelOrder {
@@ -348,29 +334,42 @@ impl MangoInstruction {
 }
 
 
-fn unpack_dex_new_order_v1(data: &[u8; 32]) -> Option<serum_dex::instruction::NewOrderInstructionV1> {
-    let (&side_arr, &price_arr, &max_qty_arr, &otype_arr, &client_id_bytes) =
-        array_refs![data, 4, 8, 8, 4, 8];
-    let client_id = u64::from_le_bytes(client_id_bytes);
-    let side = match u32::from_le_bytes(side_arr) {
-        0 => serum_dex::matching::Side::Bid,
-        1 => serum_dex::matching::Side::Ask,
-        _ => return None,
-    };
+fn unpack_dex_new_order_v3(data: &[u8; 46]) -> Option<serum_dex::instruction::NewOrderInstructionV3> {
+    let (
+        &side_arr,
+        &price_arr,
+        &max_coin_qty_arr,
+        &max_native_pc_qty_arr,
+        &self_trade_behavior_arr,
+        &otype_arr,
+        &client_order_id_bytes,
+        &limit_arr,
+    ) = array_refs![data, 4, 8, 8, 8, 4, 4, 8, 2];
+
+    let side = serum_dex::matching::Side::try_from_primitive(u32::from_le_bytes(side_arr).try_into().ok()?).ok()?;
     let limit_price = NonZeroU64::new(u64::from_le_bytes(price_arr))?;
-    let max_qty = NonZeroU64::new(u64::from_le_bytes(max_qty_arr))?;
-    let order_type = match u32::from_le_bytes(otype_arr) {
-        0 => serum_dex::matching::OrderType::Limit,
-        1 => serum_dex::matching::OrderType::ImmediateOrCancel,
-        2 => serum_dex::matching::OrderType::PostOnly,
-        _ => return None,
-    };
-    Some(serum_dex::instruction::NewOrderInstructionV1 {
+    let max_coin_qty = NonZeroU64::new(u64::from_le_bytes(max_coin_qty_arr))?;
+    let max_native_pc_qty_including_fees =
+        NonZeroU64::new(u64::from_le_bytes(max_native_pc_qty_arr))?;
+    let self_trade_behavior = serum_dex::instruction::SelfTradeBehavior::try_from_primitive(
+        u32::from_le_bytes(self_trade_behavior_arr)
+            .try_into()
+            .ok()?,
+    )
+        .ok()?;
+    let order_type = serum_dex::matching::OrderType::try_from_primitive(u32::from_le_bytes(otype_arr).try_into().ok()?).ok()?;
+    let client_order_id = u64::from_le_bytes(client_order_id_bytes);
+    let limit = u16::from_le_bytes(limit_arr);
+
+    Some(serum_dex::instruction::NewOrderInstructionV3 {
         side,
         limit_price,
-        max_qty,
+        max_coin_qty,
+        max_native_pc_qty_including_fees,
+        self_trade_behavior,
         order_type,
-        client_id,
+        client_order_id,
+        limit,
     })
 }
 
@@ -479,8 +478,6 @@ pub fn withdraw(
     signer_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
-    mint_pks: &[Pubkey],
-    token_index: usize,
     quantity: u64
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
@@ -500,11 +497,8 @@ pub fn withdraw(
     accounts.extend(oracle_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
-    accounts.extend(mint_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
 
-    let instr = MangoInstruction::Withdraw { token_index, quantity };
+    let instr = MangoInstruction::Withdraw { quantity };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
@@ -520,7 +514,6 @@ pub fn borrow(
     owner_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
-    mint_pks: &[Pubkey],
     token_index: usize,
     quantity: u64
 ) -> Result<Instruction, ProgramError> {
@@ -535,9 +528,6 @@ pub fn borrow(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
     accounts.extend(oracle_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
-    accounts.extend(mint_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
@@ -583,7 +573,6 @@ pub fn liquidate(
     oracle_pks: &[Pubkey],
     vault_pks: &[Pubkey],
     liqor_token_account_pks: &[Pubkey],
-    mint_pks: &[Pubkey],
     deposit_quantities: [u64; NUM_TOKENS]
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
@@ -606,9 +595,6 @@ pub fn liquidate(
     accounts.extend(liqor_token_account_pks.iter().map(
         |pk| AccountMeta::new(*pk, false))
     );
-    accounts.extend(mint_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
 
     let instr = MangoInstruction::Liquidate { deposit_quantities };
     let data = instr.pack();
@@ -627,14 +613,16 @@ pub fn place_order(
     dex_prog_id: &Pubkey,
     spot_market_pk: &Pubkey,
     dex_request_queue_pk: &Pubkey,
+    dex_event_queue_pk: &Pubkey,
+    bids_pk: &Pubkey,
+    asks_pk: &Pubkey,
     vault_pk: &Pubkey,
     signer_pk: &Pubkey,
     dex_base_pk: &Pubkey,
     dex_quote_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
-    mint_pks: &[Pubkey],
-    order: serum_dex::instruction::NewOrderInstructionV2
+    order: serum_dex::instruction::NewOrderInstructionV3
 ) -> Result<Instruction, ProgramError> {
 
     let mut accounts = vec![
@@ -645,6 +633,9 @@ pub fn place_order(
         AccountMeta::new_readonly(*dex_prog_id, false),
         AccountMeta::new(*spot_market_pk, false),
         AccountMeta::new(*dex_request_queue_pk, false),
+        AccountMeta::new(*dex_event_queue_pk, false),
+        AccountMeta::new(*bids_pk, false),
+        AccountMeta::new(*asks_pk, false),
         AccountMeta::new(*vault_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
         AccountMeta::new(*dex_base_pk, false),
@@ -657,9 +648,6 @@ pub fn place_order(
         |pk| AccountMeta::new(*pk, false))
     );
     accounts.extend(oracle_pks.iter().map(
-        |pk| AccountMeta::new_readonly(*pk, false))
-    );
-    accounts.extend(mint_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
@@ -722,10 +710,12 @@ pub fn cancel_order(
     margin_account_pk: &Pubkey,
     dex_prog_id: &Pubkey,
     spot_market_pk: &Pubkey,
+    bids_pk: &Pubkey,
+    asks_pk: &Pubkey,
     open_orders_pk: &Pubkey,
-    dex_request_queue_pk: &Pubkey,
     signer_pk: &Pubkey,
-    order: serum_dex::instruction::CancelOrderInstruction
+    dex_event_queue_pk: &Pubkey,
+    order: serum_dex::instruction::CancelOrderInstructionV2
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
@@ -734,9 +724,11 @@ pub fn cancel_order(
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
         AccountMeta::new_readonly(*dex_prog_id, false),
         AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*bids_pk, false),
+        AccountMeta::new(*asks_pk, false),
         AccountMeta::new(*open_orders_pk, false),
-        AccountMeta::new(*dex_request_queue_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new(*dex_event_queue_pk, false),
     ];
 
     let instr = MangoInstruction::CancelOrder { order };
@@ -755,9 +747,11 @@ pub fn cancel_order_by_client_id(
     margin_account_pk: &Pubkey,
     dex_prog_id: &Pubkey,
     spot_market_pk: &Pubkey,
+    bids_pk: &Pubkey,
+    asks_pk: &Pubkey,
     open_orders_pk: &Pubkey,
-    dex_request_queue_pk: &Pubkey,
     signer_pk: &Pubkey,
+    dex_event_queue_pk: &Pubkey,
     client_id: u64
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
@@ -767,11 +761,12 @@ pub fn cancel_order_by_client_id(
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
         AccountMeta::new_readonly(*dex_prog_id, false),
         AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*bids_pk, false),
+        AccountMeta::new(*asks_pk, false),
         AccountMeta::new(*open_orders_pk, false),
-        AccountMeta::new(*dex_request_queue_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new(*dex_event_queue_pk, false),
     ];
-
     let instr = MangoInstruction::CancelOrderByClientId { client_id };
     let data = instr.pack();
     Ok(Instruction {

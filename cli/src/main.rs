@@ -187,9 +187,6 @@ fn run_liquidator(
 
     let sleep_time = time::Duration::from_secs(2);
 
-    let mut mint_accs = get_accounts(client, &mgids.mint_pks);
-    let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-    let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
     let mango_group_acc = client.get_account(&mgids.mango_group_pk)?;
     let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
     let min_coll_ratio = U64F64::from_num(1.02);
@@ -320,10 +317,6 @@ fn print_prices(
     let mut oracle_accs = get_accounts(client, &mgids.oracle_pks);
     let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
     let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
-
-    let mut mint_accs = get_accounts(client, &mgids.mint_pks);
-    let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-    let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
 
     let prices = get_prices(mango_group, oracle_accs)?;
     let names: Vec<&str> = mango_group_name.split("_").collect();
@@ -776,9 +769,6 @@ pub fn start(opts: Opts) -> Result<()> {
             let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
             let tokens: Vec<&str> = mango_group_name.split("_").collect();
 
-            let mut mint_accs = get_accounts(&client, &mgids.mint_pks);
-            let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-            let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
 
             let mut oracle_accs = get_accounts(&client, &mgids.oracle_pks);
             let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
