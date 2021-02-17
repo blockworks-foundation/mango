@@ -107,6 +107,8 @@ pub struct MangoGroup {
     pub maint_coll_ratio: U64F64,  // 1.10
     pub init_coll_ratio: U64F64,  //  1.20
 
+    pub srm_vault: Pubkey,  // holds users SRM for fee reduction
+
     pub mint_decimals: [u8; NUM_TOKENS],
     pub oracle_decimals: [u8; NUM_MARKETS],
     pub padding: [u8; MANGO_GROUP_PADDING]
@@ -241,8 +243,12 @@ pub struct MarginAccount {
     // this will be incremented every time an order is opened and decremented when order is closed
     pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
-    // pub positions: [u64; NUM_TOKENS],  // the positions held by the user
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
+
+    // The SRM contributed to the pool by this user
+    // These SRM are not at risk and have no effect on any margin calculations.
+    // Depositing srm is a strictly altruistic act with no upside and no downside
+    pub srm_balance: u64,
 }
 impl_loadable!(MarginAccount);
 

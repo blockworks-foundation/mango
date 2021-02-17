@@ -642,7 +642,7 @@ dependencies = [
 [[package]]
 name = "serum_dex"
 version = "0.2.0"
-source = "git+https://github.com/blockworks-foundation/serum-dex.git?branch=dex-v3-devnet#3436aac93fb1c1701aadaeabe073a46f6e33ad78"
+source = "git+https://github.com/blockworks-foundation/serum-dex.git?branch=dex-v3-devnet#db4153a15e9f3910f78eecf2e7565e3fa4aab7a3"
 dependencies = [
  "arrayref",
  "bincode",
@@ -677,9 +677,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi"
-version = "1.5.7"
+version = "1.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ea85e6a6677c3888dd83d14e9b0dee8575619480af4484109d6c36256c80cb"
+checksum = "dc44c8096d5847d8cf7f3af3cce565de554cb56371decf93b060633ca8588913"
 dependencies = [
  "bs58",
  "bv",
@@ -697,9 +697,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi-macro"
-version = "1.5.7"
+version = "1.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7c67ad9d35a18d5297b5c35899826e605c63ea31558799ca3ef12d4e6d53d4"
+checksum = "f905159beff1b53e4ba8b018a9d13d96ba164c3973bf3b9d587e730bcc14fc18"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -710,9 +710,9 @@ dependencies = [
 
 [[package]]
 name = "solana-logger"
-version = "1.5.7"
+version = "1.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69fda382cf80354fa98896120cdabe2c9e28ead53c3fa6e42c9ae5c78bbd7f46"
+checksum = "d83a006d97da5514a4475141573383d3fcd71c729ff78494f96bb531cf734d21"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -721,9 +721,9 @@ dependencies = [
 
 [[package]]
 name = "solana-program"
-version = "1.5.7"
+version = "1.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a02b852e088e49a8699c1d1b5d126987c457d36199f2bf142d87ac65e7992a52"
+checksum = "c2007bf285617f8a783e96b20ccd2f8d813549090a5b520f22e5f65b3cd9b157"
 dependencies = [
  "bincode",
  "bs58",
@@ -751,9 +751,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk-macro"
-version = "1.5.7"
+version = "1.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6515ccfe86384b12d480a5aa876c80981aca122d863510a2eace63150e89e35d"
+checksum = "b8a6635f1798c8ff1b88bb0fad1d4693c011f36a73c9ae03f198203144edcabb"
 dependencies = [
  "bs58",
  "proc-macro2",

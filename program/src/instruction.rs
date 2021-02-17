@@ -17,23 +17,24 @@ use crate::state::NUM_TOKENS;
 pub enum MangoInstruction {
     /// Initialize a group of lending pools that can be cross margined
     ///
-    /// Accounts expected by this instruction (5 + 2 * NUM_TOKENS + 2 * NUM_MARKETS):
+    /// Accounts expected by this instruction (6 + 2 * NUM_TOKENS + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - the data account to store mango group state vars
     /// 1. `[]` rent_acc - Rent sysvar account
     /// 2. `[]` clock_acc - clock sysvar account
     /// 3. `[]` signer_acc - pubkey of program_id hashed with signer_nonce and mango_group_acc.key
     /// 4. `[]` dex_prog_acc - program id of serum dex
-    /// 5..5+NUM_TOKENS `[]` token_mint_accs - mint of each token in the same order as the spot
+    /// 5. `[]` srm_vault_acc - vault for fee tier reductions
+    /// 6..6+NUM_TOKENS `[]` token_mint_accs - mint of each token in the same order as the spot
     ///     markets. Quote currency mint should be last.
     ///     e.g. for spot markets BTC/USDC, ETH/USDC -> [BTC, ETH, USDC]
     ///
-    /// 5+NUM_TOKENS..5+2*NUM_TOKENS `[]`
+    /// 6+NUM_TOKENS..6+2*NUM_TOKENS `[]`
     ///     vault_accs - Vault owned by signer_acc.key for each of the mints
     ///
-    /// 5+2*NUM_TOKENS..5+2*NUM_TOKENS+NUM_MARKETS `[]`
+    /// 6+2*NUM_TOKENS..6+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
-    /// 5+2*NUM_TOKENS+NUM_MARKETS..5+2*NUM_TOKENS+2*NUM_MARKETS `[]`
+    /// 6+2*NUM_TOKENS+NUM_MARKETS..6+2*NUM_TOKENS+2*NUM_MARKETS `[]`
     ///     oracle_accs - Solink Feed accounts corresponding to each trading pair
     InitMangoGroup {
         signer_nonce: u64,
@@ -43,7 +44,7 @@ pub enum MangoInstruction {
 
     /// Initialize a margin account for a user
     ///
-    /// Accounts expected by this instruction (4 + NUM_MARKETS):
+    /// Accounts expected by this instruction (4):
     ///
     /// 0. `[]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[writable]` margin_account_acc - the margin account data
@@ -53,21 +54,20 @@ pub enum MangoInstruction {
 
     /// Deposit funds into margin account to be used as collateral and earn interest.
     ///
-    /// Accounts expected by this instruction (8):
+    /// Accounts expected by this instruction (7):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[writable]` margin_account_acc - the margin account for this user
     /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
-    /// 3. `[]` mint_acc - Mint of the token being deposited
-    /// 4. `[writable]` token_account_acc - TokenAccount owned by user which will be sending the funds
-    /// 5. `[writable]` vault_acc - TokenAccount owned by MangoGroup
-    /// 6. `[]` token_prog_acc - acc pointed to by SPL token program id
-    /// 7. `[]` clock_acc - Clock sysvar account
+    /// 3. `[writable]` token_account_acc - TokenAccount owned by user which will be sending the funds
+    /// 4. `[writable]` vault_acc - TokenAccount owned by MangoGroup
+    /// 5. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 6. `[]` clock_acc - Clock sysvar account
     Deposit {
         quantity: u64
     },
 
-    ///*** Withdraw funds that were deposited earlier.
+    /// Withdraw funds that were deposited earlier.
     ///
     /// Accounts expected by this instruction (8 + 2 * NUM_MARKETS):
     ///
@@ -86,7 +86,7 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    /// ***Borrow by incrementing MarginAccount.borrows given collateral ratio is below init_coll_rat
+    /// Borrow by incrementing MarginAccount.borrows given collateral ratio is below init_coll_rat
     ///
     /// Accounts expected by this instruction (4 + 2 * NUM_MARKETS):
     ///
@@ -115,7 +115,7 @@ pub enum MangoInstruction {
         quantity: u64
     },
 
-    /// ***Take over a MarginAccount that is below init_coll_ratio by depositing funds
+    /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
     ///
     /// Accounts expected by this instruction (5 + 2 * NUM_MARKETS + 2 * NUM_TOKENS):
     ///
@@ -136,10 +136,44 @@ pub enum MangoInstruction {
         deposit_quantities: [u64; NUM_TOKENS]
     },
 
+    /// Deposit SRM into the SRM vault for MangoGroup
+    /// These SRM are not at risk and are not counted towards collateral or any margin calculations
+    /// Depositing SRM is a strictly altruistic act with no upside and no downside
+    ///
+    /// Accounts expected by this instruction (7):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[writable]` srm_account_acc - TokenAccount owned by user which will be sending the funds
+    /// 4. `[writable]` vault_acc - SRM vault of MangoGroup
+    /// 5. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 6. `[]` clock_acc - Clock sysvar account
+    DepositSrm {
+        quantity: u64
+    },
+    /// Withdraw SRM owed to this MarginAccount
+    /// These SRM are not at risk and are not counted towards collateral or any margin calculations
+    /// Depositing SRM is a strictly altruistic act with no upside and no downside
+    ///
+    /// Accounts expected by this instruction (8):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
+    /// 3. `[writable]` srm_account_acc - TokenAccount owned by user which will be sending the funds
+    /// 4. `[writable]` vault_acc - SRM vault of MangoGroup
+    /// 5. `[]` signer_acc - acc pointed to by signer_key
+    /// 6. `[]` token_prog_acc - acc pointed to by SPL token program id
+    /// 7. `[]` clock_acc - Clock sysvar account
+    WithdrawSrm {
+        quantity: u64
+    },
+
     // Proxy instructions to Dex
     /// ***Place an order on the Serum Dex using Mango margin facilities
     ///
-    /// Accounts expected by this instruction (16 + 2 * NUM_MARKETS):
+    /// Accounts expected by this instruction (17 + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` owner_acc - MarginAccount owner
@@ -148,17 +182,18 @@ pub enum MangoInstruction {
     /// 4. `[]` dex_prog_acc - program id of serum dex
     /// 5. `[writable]` spot_market_acc - serum dex MarketState
     /// 6. `[writable]` dex_request_queue_acc - serum dex request queue for this market
-    /// 6. `[writable]` dex_event_queue - serum dex event queue for this market
-    /// 6. `[writable]` bids_acc - serum dex bids for this market
-    /// 6. `[writable]` asks_acc - serum dex asks for this market
-    /// 7. `[writable]` vault_acc - mango's vault for this currency (quote if buying, base if selling)
-    /// 8. `[]` signer_acc - mango signer key
-    /// 9. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
-    /// 10. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
-    /// 11. `[]` spl token program
-    /// 12. `[]` the rent sysvar
-    /// 13..13+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
-    /// 13+NUM_MARKETS..13+2*NUM_MARKETS `[]`
+    /// 7. `[writable]` dex_event_queue - serum dex event queue for this market
+    /// 8. `[writable]` bids_acc - serum dex bids for this market
+    /// 9. `[writable]` asks_acc - serum dex asks for this market
+    /// 10. `[writable]` vault_acc - mango's vault for this currency (quote if buying, base if selling)
+    /// 11. `[]` signer_acc - mango signer key
+    /// 12. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
+    /// 13. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
+    /// 14. `[]` spl token program
+    /// 15. `[]` the rent sysvar
+    /// 16. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
+    /// 17..17+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 17+NUM_MARKETS..17+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
     PlaceOrder {
         order: serum_dex::instruction::NewOrderInstructionV3
@@ -184,7 +219,7 @@ pub enum MangoInstruction {
     /// 13. `[]` spl token program
     SettleFunds,
 
-    /// ***Cancel an order using dex instruction
+    /// Cancel an order using dex instruction
     ///
     /// Accounts expected by this instruction (11):
     ///
@@ -204,7 +239,7 @@ pub enum MangoInstruction {
         order: serum_dex::instruction::CancelOrderInstructionV2
     },
 
-    /// ***Cancel an order using client_id
+    /// Cancel an order using client_id
     ///
     /// Accounts expected by this instruction (11):
     ///
@@ -290,6 +325,14 @@ impl MangoInstruction {
                 }
             },
             7 => {
+                let quantity = array_ref![data, 0, 8];
+                MangoInstruction::DepositSrm { quantity: u64::from_le_bytes(*quantity) }
+            }
+            8 => {
+                let quantity = array_ref![data, 0, 8];
+                MangoInstruction::WithdrawSrm { quantity: u64::from_le_bytes(*quantity) }
+            }
+            9 => {
                 let data_arr = array_ref![data, 0, 46];
                 let order = unpack_dex_new_order_v3(data_arr)?;
                 MangoInstruction::PlaceOrder {
@@ -297,10 +340,10 @@ impl MangoInstruction {
                 }
 
             },
-            8 => {
+            10 => {
                 MangoInstruction::SettleFunds
             },
-            9 => {
+            11 => {
                 let data_array = array_ref![data, 0, 20];
                 let fields = array_refs![data_array, 4, 16];
                 let side = match u32::from_le_bytes(*fields.0) {
@@ -318,7 +361,7 @@ impl MangoInstruction {
                     order
                 }
             },
-            10 => {
+            12 => {
                 let client_id = array_ref![data, 0, 8];
                 MangoInstruction::CancelOrderByClientId {
                     client_id: u64::from_le_bytes(*client_id)
@@ -379,6 +422,7 @@ pub fn init_mango_group(
     mango_group_pk: &Pubkey,
     signer_pk: &Pubkey,
     dex_prog_id: &Pubkey,
+    srm_vault_pk: &Pubkey,
     mint_pks: &[Pubkey],
     vault_pks: &[Pubkey],
     spot_market_pks: &[Pubkey],
@@ -392,7 +436,8 @@ pub fn init_mango_group(
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
         AccountMeta::new_readonly(*signer_pk, false),
-        AccountMeta::new_readonly(*dex_prog_id, false)
+        AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new_readonly(*srm_vault_pk, false)
     ];
     accounts.extend(mint_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
@@ -443,7 +488,6 @@ pub fn deposit(
     mango_group_pk: &Pubkey,
     margin_account_pk: &Pubkey,
     owner_pk: &Pubkey,
-    mint_pk: &Pubkey,
     token_account_pk: &Pubkey,
     vault_pk: &Pubkey,
     quantity: u64
@@ -452,7 +496,6 @@ pub fn deposit(
         AccountMeta::new(*mango_group_pk, false),
         AccountMeta::new(*margin_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
-        AccountMeta::new_readonly(*mint_pk, false),
         AccountMeta::new(*token_account_pk, false),
         AccountMeta::new(*vault_pk, false),
         AccountMeta::new_readonly(spl_token::ID, false),
@@ -605,6 +648,64 @@ pub fn liquidate(
     })
 }
 
+pub fn deposit_srm(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    srm_account_pk: &Pubkey,
+    vault_pk: &Pubkey,
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new(*srm_account_pk, false),
+        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    let instr = MangoInstruction::DepositSrm { quantity };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn withdraw_srm(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    srm_account_pk: &Pubkey,
+    vault_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    quantity: u64
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new(*srm_account_pk, false),
+        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    let instr = MangoInstruction::WithdrawSrm { quantity };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
 pub fn place_order(
     program_id: &Pubkey,
     mango_group_pk: &Pubkey,
@@ -620,6 +721,7 @@ pub fn place_order(
     signer_pk: &Pubkey,
     dex_base_pk: &Pubkey,
     dex_quote_pk: &Pubkey,
+    srm_vault_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
     order: serum_dex::instruction::NewOrderInstructionV3
@@ -642,6 +744,7 @@ pub fn place_order(
         AccountMeta::new(*dex_quote_pk, false),
         AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
+        AccountMeta::new(*srm_vault_pk, false),
     ];
 
     accounts.extend(open_orders_pks.iter().map(
