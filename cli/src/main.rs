@@ -187,9 +187,6 @@ fn run_liquidator(
 
     let sleep_time = time::Duration::from_secs(2);
 
-    let mut mint_accs = get_accounts(client, &mgids.mint_pks);
-    let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-    let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
     let mango_group_acc = client.get_account(&mgids.mango_group_pk)?;
     let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
     let min_coll_ratio = U64F64::from_num(1.02);
@@ -261,7 +258,6 @@ fn run_liquidator(
                     mgids.oracle_pks.as_slice(),
                     &mango_group.vaults,
                     liqor_token_account_pks.as_slice(),
-                    &mgids.mint_pks,
                     [0, 0, deficit * 101 / 100]
                 )?;
                 let instructions = vec![instruction];
@@ -320,10 +316,6 @@ fn print_prices(
     let mut oracle_accs = get_accounts(client, &mgids.oracle_pks);
     let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
     let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
-
-    let mut mint_accs = get_accounts(client, &mgids.mint_pks);
-    let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-    let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
 
     let prices = get_prices(mango_group, oracle_accs)?;
     let names: Vec<&str> = mango_group_name.split("_").collect();
@@ -442,6 +434,11 @@ pub fn start(opts: Opts) -> Result<()> {
                 vault_pks.push(vault_pk);
             }
 
+            let srm_mint_pk = get_symbol_pk(symbols, "SRM");
+            let srm_vault_pk = create_token_account(
+                &client, &srm_mint_pk, &signer_key, &payer
+            )?.pubkey();
+
             // Find corresponding spot markets
             let mut spot_market_pks = vec![];
             let mut oracle_pks = vec![];
@@ -461,6 +458,7 @@ pub fn start(opts: Opts) -> Result<()> {
                 &mango_group_pk,
                 &signer_key,
                 &dex_program_id,
+                &srm_vault_pk,
                 mint_pks.as_slice(),
                 vault_pks.as_slice(),
                 spot_market_pks.as_slice(),
@@ -582,8 +580,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 &mango_group.signer_key,
                 &margin_account.open_orders,
                 mgids.oracle_pks.as_slice(),
-                mgids.mint_pks.as_slice(),
-                token_index,
                 spl_token::ui_amount_to_amount(quantity, mint.decimals)
             )?;
 
@@ -626,6 +622,7 @@ pub fn start(opts: Opts) -> Result<()> {
             }
 
             let mint_pks = get_vec_pks(&mango_group_ids["mint_pks"]);
+
             let token_index = tokens.iter().position(|t| *t == token_symbol.as_str()).unwrap();
             let mint_acc = client.get_account(&mint_pks[token_index])?;
             let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
@@ -637,7 +634,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 &margin_account.owner,
                 &open_orders_pks,
                 oracle_pks.as_slice(),
-                mint_pks.as_slice(),
                 token_index,
                 spl_token::ui_amount_to_amount(quantity, mint.decimals)
             )?;
@@ -700,7 +696,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 &mango_group_pk,
                 &margin_account_pk,
                 &payer.pubkey(),
-                &mint_pk,
                 &token_account_pk,
                 vault_pk,
                 spl_token::ui_amount_to_amount(quantity, mint.decimals)
@@ -776,9 +771,6 @@ pub fn start(opts: Opts) -> Result<()> {
             let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
             let tokens: Vec<&str> = mango_group_name.split("_").collect();
 
-            let mut mint_accs = get_accounts(&client, &mgids.mint_pks);
-            let mint_accs = create_account_infos(mint_accs.as_mut_slice());
-            let mint_accs = array_ref![mint_accs.as_slice(), 0, NUM_TOKENS];
 
             let mut oracle_accs = get_accounts(&client, &mgids.oracle_pks);
             let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());

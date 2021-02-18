@@ -107,9 +107,8 @@ pub struct MangoGroup {
     pub maint_coll_ratio: U64F64,  // 1.10
     pub init_coll_ratio: U64F64,  //  1.20
 
-    // mango quantity 50m (index.deposit = 2)
-    // native quantity 100m
-    // ui quantity 100
+    pub srm_vault: Pubkey,  // holds users SRM for fee reduction
+
     pub mint_decimals: [u8; NUM_TOKENS],
     pub oracle_decimals: [u8; NUM_MARKETS],
     pub padding: [u8; MANGO_GROUP_PADDING]
@@ -145,7 +144,9 @@ impl MangoGroup {
     pub fn get_token_index(&self, mint_pk: &Pubkey) -> Option<usize> {
         self.tokens.iter().position(|token| token == mint_pk)
     }
-
+    pub fn get_token_index_with_vault(&self, vault: &Pubkey) -> Option<usize> {
+        self.vaults.iter().position(|pk| pk == vault)
+    }
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
         let optimal_util = U64F64::from_num(0.7);
@@ -242,8 +243,12 @@ pub struct MarginAccount {
     // this will be incremented every time an order is opened and decremented when order is closed
     pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
-    // pub positions: [u64; NUM_TOKENS],  // the positions held by the user
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
+
+    // The SRM contributed to the pool by this user
+    // These SRM are not at risk and have no effect on any margin calculations.
+    // Depositing srm is a strictly altruistic act with no upside and no downside
+    pub srm_balance: u64,
 }
 impl_loadable!(MarginAccount);
 
