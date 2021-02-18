@@ -1,4 +1,4 @@
-import { IDS, MangoClient, NUM_TOKENS } from '@mango/client';
+import { IDS, MangoClient, MarginAccount, NUM_TOKENS } from '@mango/client';
 
 import { Account, Connection, PublicKey, TransactionSignature } from '@solana/web3.js';
 import * as fs from 'fs';
@@ -20,9 +20,9 @@ async function main() {
   const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
 
 
-  // TODO fetch these automatically
   const keyPairPath = '/home/dd/.config/solana/id.json'
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+  // TODO fetch these automatically
   const tokenWallets = [
     new PublicKey("HLoPtihB8oETm1kkTpx17FEnXm7afQdS4hojTNvbg3Rg"),
     new PublicKey("8ASVNBAo94RnJCABYybnkJnXGpBHan2svW3pRsKdbn7s"),
@@ -37,13 +37,12 @@ async function main() {
   ))
   const sleepTime = 10000
   // TODO handle failures in any of the steps
+  // Find a way to get all margin accounts without querying fresh--get incremental updates to margin accounts
   while (true) {
     mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
-    const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroupPk)
+    const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroup)
 
-    await Promise.all(marginAccounts.map((ma) => (ma.loadOpenOrders(connection, dexProgramId))))
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
-
     for (let ma of marginAccounts) {  // parallelize this if possible
       const assetsVal = ma.getAssetsVal(mangoGroup, prices)
       const liabsVal = ma.getLiabsVal(mangoGroup, prices)
@@ -56,24 +55,24 @@ async function main() {
       console.log(assetsVal, liabsVal, collRatio)
 
 
-      // if (collRatio >= mangoGroup.maintCollRatio) {
-      //   continue
-      // }
-      //
-      // const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
-      // console.log('liquidatable', deficit)
-      //
-      // // handle undercoll case separately
-      // if (collRatio < 1) {
-      //   // Need to make sure there are enough funds in MangoGroup to be compensated fully
-      // }
-      //
-      // // determine how much to deposit to get the account above init coll ratio
-      // await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
-      // ma = await client.getCompleteMarginAccount(connection, ma.publicKey, dexProgramId)
-      //
-      // console.log('liquidation success')
-      // console.log(ma.toPrettyString(mangoGroup))
+      if (collRatio >= mangoGroup.maintCollRatio) {
+        continue
+      }
+
+      const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
+      console.log('liquidatable', deficit)
+
+      // handle undercoll case separately
+      if (collRatio < 1) {
+        // Need to make sure there are enough funds in MangoGroup to be compensated fully
+      }
+
+      // determine how much to deposit to get the account above init coll ratio
+      await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
+      ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
+
+      console.log('liquidation success')
+      console.log(ma.toPrettyString(mangoGroup))
 
       // Cancel all open orders
       const bidsPromises = markets.map((market) => market.loadBids(connection))
@@ -92,7 +91,7 @@ async function main() {
 
       await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
       console.log('settleAll complete')
-      ma = await client.getCompleteMarginAccount(connection, ma.publicKey, dexProgramId)
+      ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
 
       // sort non-quote currency assets by value
       const assets = ma.getAssets(mangoGroup)
@@ -136,7 +135,7 @@ async function main() {
 
       await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
       console.log('settleAll complete')
-      ma = await client.getCompleteMarginAccount(connection, ma.publicKey, dexProgramId)
+      ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
 
       console.log('Liquidation process complete\n', ma.toPrettyString(mangoGroup))
 
@@ -160,13 +159,35 @@ async function setupMarginAccounts() {
   const mangoProgramId = new PublicKey(clusterIds.mango_program_id);
   const dexProgramId = new PublicKey(clusterIds.dex_program_id)
 
-  const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk);
+  let mangoGroup = await client.getMangoGroup(connection, mangoGroupPk);
 
+  const srmAccountPk = new PublicKey("6utvndL8EEjpwK5QVtguErncQEPVbkuyABmXu6FeygeV")
   // TODO auto fetch
-  const marginAccountPk = new PublicKey("6qiX5n1TTiv1R8GqAZUk1BaP7qFaPow6MoAqX6rrgEcg")
-  let marginAccount = await client.getCompleteMarginAccount(connection, marginAccountPk, dexProgramId)
+  const marginAccounts = await client.getMarginAccountsForOwner(connection, mangoProgramId, mangoGroup, payer)
+  let marginAccount: MarginAccount | undefined = undefined
+  let minVal = 0
+  for (const ma of marginAccounts) {
+    const val = await ma.getValue(connection, mangoGroup)
+    if (val >= minVal) {
+      minVal = val
+      marginAccount = ma
+    }
+  }
+  if (marginAccount == undefined) {
+    throw new Error("No margin accounts")
+  }
+  // await client.depositSrm(connection, mangoProgramId, mangoGroup, marginAccount, payer, srmAccountPk, 10000)
 
-  console.log(marginAccount.toPrettyString(mangoGroup))
+  marginAccount = await client.getMarginAccount(connection, marginAccount.publicKey, dexProgramId)
+
+  console.log(marginAccount.toPrettyString(mangoGroup), marginAccount.getUiSrmBalance())
+
+  for (const ooa of marginAccount.openOrdersAccounts) {
+    if (ooa == undefined) {
+      continue
+    }
+    console.log(ooa.baseTokenFree.toString(), ooa.quoteTokenFree.toString(), ooa.baseTokenTotal.toString(), ooa.quoteTokenTotal.toString())
+  }
 
   const marketIndex = 0  // index for BTC/USDC
   const spotMarket = await Market.load(
@@ -178,43 +199,80 @@ async function setupMarginAccounts() {
   const prices = await mangoGroup.getPrices(connection)
   console.log(prices)
 
-  // // margin short 0.1 BTC
-  // await client.placeOrder(
-  //   connection,
-  //   mangoProgramId,
-  //   mangoGroup,
-  //   marginAccount,
-  //   spotMarket,
-  //   payer,
-  //   'sell',
-  //   100,
-  //   0.5
-  // )
-
-  await spotMarket.matchOrders(connection, payer, 10)
-
-  await client.settleFunds(
+  console.log('placing order')
+  // margin short 0.1 BTC
+  await client.placeOrder(
     connection,
     mangoProgramId,
     mangoGroup,
     marginAccount,
+    spotMarket,
     payer,
-    spotMarket
+    'sell',
+    12000,
+    0.1
   )
-  //
+
+  // marginAccount = await client.getCompleteMarginAccount(connection, marginAccount.publicKey, dexProgramId)
+
+  // await client.settleFunds(
+  //   connection,
+  //   mangoProgramId,
+  //   mangoGroup,
+  //   marginAccount,
+  //   payer,
+  //   spotMarket
+  // )
+
   // await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[2], 5000)
   // await client.settleBorrow(connection, mangoProgramId, mangoGroup, marginAccount, payer, mangoGroup.tokens[0], 1.0)
 
-  marginAccount = await client.getCompleteMarginAccount(connection, marginAccountPk, dexProgramId)
-
+  await sleep(3000)
+  marginAccount = await client.getMarginAccount(connection, marginAccount.publicKey, dexProgramId)
   console.log(marginAccount.toPrettyString(mangoGroup))
+  for (const ooa of marginAccount.openOrdersAccounts) {
+    if (ooa == undefined) {
+      continue
+    }
+    console.log(ooa.baseTokenFree.toString(), ooa.quoteTokenFree.toString(), ooa.baseTokenTotal.toString(), ooa.quoteTokenTotal.toString())
+  }
+
+
+  const [bids, asks] = await Promise.all([spotMarket.loadBids(connection), spotMarket.loadAsks(connection)])
+
+  await marginAccount.cancelAllOrdersByMarket(
+    connection,
+    client,
+    mangoProgramId,
+    mangoGroup,
+    spotMarket,
+    bids,
+    asks,
+    payer
+  )
+  await client.settleFunds(connection, mangoProgramId, mangoGroup, marginAccount, payer, spotMarket)
+
+  await sleep(3000)
+  mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+  marginAccount = await client.getMarginAccount(connection, marginAccount.publicKey, dexProgramId)
+  console.log(marginAccount.toPrettyString(mangoGroup))
+  // @ts-ignore
+  for (const ooa of marginAccount.openOrdersAccounts) {
+    if (ooa == undefined) {
+      continue
+    }
+    console.log(ooa.baseTokenFree.toString(), ooa.quoteTokenFree.toString(), ooa.baseTokenTotal.toString(), ooa.quoteTokenTotal.toString())
+  }
+
+  console.log(mangoGroup.getUiTotalDeposit(0), mangoGroup.getUiTotalBorrow(0))
+  console.log(mangoGroup.getUiTotalDeposit(NUM_MARKETS), mangoGroup.getUiTotalBorrow(NUM_MARKETS))
+
 }
 
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
 
 async function testing() {
   const client = new MangoClient()
@@ -244,6 +302,6 @@ async function testing() {
 
   await sleep(5000)
 }
-// setupMarginAccounts()
-main()
+setupMarginAccounts()
+// main()
 // testing()

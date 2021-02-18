@@ -695,6 +695,7 @@ impl Processor {
             let vault = Account::unpack(&vault_acc.try_borrow_data()?)?;
             vault.amount
         };
+
         let spent = pre_amount.checked_sub(post_amount).unwrap();
         let index: MangoIndex = mango_group.indexes[token_i];
         let native_deposit = margin_account.get_native_deposit(&index, token_i);
@@ -835,15 +836,7 @@ impl Processor {
         let quote_change = U64F64::from_num(pre_quote - post_quote) / mango_group.indexes[NUM_MARKETS].deposit;
 
         checked_add_deposit(&mut mango_group, &mut margin_account, market_i, base_change)?;
-        checked_add_deposit(&mut mango_group, &mut margin_account, market_i, quote_change)?;
-        // margin_account.checked_add_deposit(
-        //     market_i,
-        //     U64F64::from_num(pre_base - post_base) / mango_group.indexes[market_i].deposit
-        // )?;
-        // margin_account.checked_add_deposit(
-        //     NUM_MARKETS,
-        // )?;
-
+        checked_add_deposit(&mut mango_group, &mut margin_account, NUM_MARKETS, quote_change)?;
         Ok(())
     }
 
@@ -1024,11 +1017,6 @@ fn settle_borrow_unchecked(
     checked_sub_deposit(mango_group, margin_account, token_index, dep_settle)?;
     checked_sub_borrow(mango_group, margin_account, token_index, borr_settle)?;
 
-    // margin_account.checked_sub_borrow(token_index, borr_settle)?;
-    // margin_account.checked_sub_deposit(token_index, dep_settle)?;
-    // mango_group.checked_sub_borrow(token_index, borr_settle)?;
-    // mango_group.checked_sub_deposit(token_index, dep_settle)?;
-
     // No need to check collateralization ratio or deposits/borrows validity
 
     Ok(())
@@ -1048,8 +1036,6 @@ fn socialize_loss(
     // TODO make sure there is enough funds to socialize losses
     let quantity: U64F64 = reduce_quantity_native / mango_group.indexes[token_index].borrow;
     checked_sub_borrow(mango_group, margin_account, token_index, quantity)?;
-    // margin_account.checked_sub_borrow(token_index, quantity)?;
-    // mango_group.checked_sub_borrow(token_index, quantity)?;
 
     let total_deposits = U64F64::from_num(mango_group.get_total_native_deposit(token_index));
     let percentage_loss = reduce_quantity_native.checked_div(total_deposits).unwrap();
