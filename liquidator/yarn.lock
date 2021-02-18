@@ -504,9 +504,9 @@
     "@types/yargs" "^15.0.0"
     chalk "^4.0.0"
 
-"@mango/client@git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#v3":
+"@mango/client@git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git":
   version "0.1.0"
-  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#f670846d4d6f6b7d14868f37e59a5de873fe1013"
+  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#d9cbc9239f84296513fe762bbf0d11b0732e5399"
   dependencies:
     "@project-serum/serum" "^0.13.20"
     "@project-serum/sol-wallet-adapter" "^0.1.4"
