@@ -13,7 +13,8 @@ use solana_program::pubkey::Pubkey;
 
 use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
 
-/// Initially launching with BTC/USDC, ETH/USDC, SRM/USDC
+
+/// Initially launching with BTC/USDT, ETH/USDT
 pub const NUM_TOKENS: usize = 3;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
 pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
@@ -84,6 +85,7 @@ pub struct MangoIndex {
 unsafe impl Zeroable for MangoIndex {}
 unsafe impl Pod for MangoIndex {}
 
+
 /// A group of spot markets that can be cross margined together
 /// TODO need plans to migrate smart contract
 /// TODO add in fees for devs and UI hosters
@@ -108,6 +110,12 @@ pub struct MangoGroup {
     pub init_coll_ratio: U64F64,  //  1.20
 
     pub srm_vault: Pubkey,  // holds users SRM for fee reduction
+
+    /// This admin key is only for alpha release and the only power it has is to amend borrow limits
+    /// If users borrow too much too quickly before liquidators are able to handle the volume,
+    /// lender funds will be at risk. Hence these borrow limits will be raised slowly
+    pub admin: Pubkey,
+    pub borrow_limits: [u64; NUM_TOKENS],
 
     pub mint_decimals: [u8; NUM_TOKENS],
     pub oracle_decimals: [u8; NUM_MARKETS],

@@ -8,7 +8,7 @@ edition = "2018"
 no-entrypoint = []
 
 [dependencies]
-solana-program = "1.5.7"
+solana-program = "1.5.8"
 spl-token = { version = "^3.0.0", features=["no-entrypoint"] }
 byteorder = "1.3.4"
 arrayref = "0.3.6"
@@ -23,7 +23,6 @@ bincode = "1.3.1"
 serum_dex = { version = "^0.2", git = "https://github.com/blockworks-foundation/serum-dex.git", branch="dex-v3-devnet", features=["no-entrypoint", "program"] }
 num-derive = "^0.3.3"
 flux-aggregator = { version = "^0.1", git = "https://github.com/czl1378/solana-flux-aggregator.git", features=["program", "no-entrypoint"] }
-
 fixed = { version = "=0.5.7", features=["serde"] }
 
 # add at the end
