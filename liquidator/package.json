@@ -29,7 +29,7 @@
     "typescript": "^4.0.5"
   },
   "dependencies": {
-    "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git",
+    "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#borrow_limits",
     "@project-serum/serum": "^0.13.20",
     "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.3",

@@ -3,7 +3,7 @@ use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
 use fixed::types::U64F64;
-use flux_aggregator::state::Aggregator;
+use flux_aggregator::borsh_state::InitBorshState;
 use serum_dex::matching::Side;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
@@ -35,6 +35,8 @@ macro_rules! prog_assert_eq {
 
 pub struct Processor {}
 
+
+
 impl Processor {
     #[inline(never)]
     fn init_mango_group(
@@ -42,16 +44,17 @@ impl Processor {
         accounts: &[AccountInfo],
         signer_nonce: u64,
         maint_coll_ratio: U64F64,
-        init_coll_ratio: U64F64
+        init_coll_ratio: U64F64,
+        borrow_limits: [u64; NUM_TOKENS]
     ) -> MangoResult<()> {
-        const NUM_FIXED: usize = 6;
+        const NUM_FIXED: usize = 7;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_TOKENS + 2 * NUM_MARKETS];
         let (
             fixed_accs,
             token_mint_accs,
             vault_accs,
             spot_market_accs,
-            oracle_accs
+            oracle_accs,
         ) = array_refs![accounts, NUM_FIXED, NUM_TOKENS, NUM_TOKENS, NUM_MARKETS, NUM_MARKETS];
 
         let [
@@ -60,7 +63,8 @@ impl Processor {
             clock_acc,
             signer_acc,
             dex_prog_acc,
-            srm_vault_acc
+            srm_vault_acc,
+            admin_acc
         ] = fixed_accs;
         let rent = Rent::from_account_info(rent_acc)?;
         let clock = Clock::from_account_info(clock_acc)?;
@@ -85,6 +89,11 @@ impl Processor {
         prog_assert_eq!(serum_dex::instruction::srm_token::ID, srm_vault.mint)?;
         prog_assert_eq!(srm_vault_acc.owner, &spl_token::id())?;
         mango_group.srm_vault = *srm_vault_acc.key;
+
+        // Set the admin key and make sure it's a signer
+        prog_assert!(admin_acc.is_signer)?;
+        mango_group.admin = *admin_acc.key;
+        mango_group.borrow_limits = borrow_limits;
 
         let curr_ts = clock.unix_timestamp as u64;
         for i in 0..NUM_TOKENS {
@@ -116,12 +125,11 @@ impl Processor {
             prog_assert_eq!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes())?;
             prog_assert_eq!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes())?;
             mango_group.spot_markets[i] = *spot_market_acc.key;
-            // TODO how to verify these are valid oracle acccounts?
             mango_group.oracles[i] = *oracle_accs[i].key;
-            let oracle = Aggregator::unpack(&oracle_accs[i].try_borrow_data()?)?;
-            mango_group.oracle_decimals[i] = oracle.submission_decimals;
-        }
 
+            let oracle = flux_aggregator::state::Aggregator::load_initialized(&oracle_accs[i])?;
+            mango_group.oracle_decimals[i] = oracle.config.decimals;
+        }
 
         Ok(())
     }
@@ -182,6 +190,8 @@ impl Processor {
 
         let token_index = mango_group.get_token_index_with_vault(vault_acc.key).unwrap();
         prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
+
+        // TODO check spl token program
 
         let deposit_instruction = spl_token::instruction::transfer(
             &spl_token::id(),
@@ -319,7 +329,7 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
-        let index: &MangoIndex = &mango_group.indexes[token_index];
+        let index: MangoIndex = mango_group.indexes[token_index];
 
         let borrow = U64F64::from_num(quantity) / index.borrow;
         let deposit = U64F64::from_num(quantity) / index.deposit;
@@ -332,13 +342,10 @@ impl Processor {
 
         prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(token_index))?;
-
+        prog_assert!(margin_account.get_native_borrow(&index, token_index) <= mango_group.borrow_limits[token_index])?;
         Ok(())
     }
 
-    // Use deposits to offset borrows to 0
-    // Client expected to close positions and open ordres first
-    // and make sure there is enough funds in positions and deposits to close
     fn settle_borrow(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -410,12 +417,10 @@ impl Processor {
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
 
-
         // No liquidations if account above maint collateral ratio
         prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
 
         // TODO need to SettleFunds or SettleBorrow first to make sure user is still liquidatable
-
         // liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
 
         if coll_ratio < U64F64::from_num(1) {
@@ -434,7 +439,8 @@ impl Processor {
                 let token_reduce = proportion.checked_mul(reduction_val).unwrap();
                 socialize_loss(&mut mango_group, &mut liqee_margin_account, i, token_reduce)?;
                 // TODO this will reduce deposits of liqee as well which could put actual value below; way to fix is to SettleBorrow first
-                // TODO Can socialize loss cause more liquidations?
+                // TODO Can socialize loss cause more liquidations? Perhaps other accounts then go below threshold
+                // TODO what happens if unable to socialize loss? If not enough deposits in currency
             }
         }
 
@@ -474,7 +480,6 @@ impl Processor {
 
         Ok(())
     }
-
 
     fn deposit_srm(
         program_id: &Pubkey,
@@ -575,13 +580,38 @@ impl Processor {
         Ok(())
     }
 
+    // TODO add
+    fn change_borrow_limit(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        token_index: usize,
+        borrow_limit: u64
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 2;
+        let accounts = array_ref![accounts, 0, NUM_FIXED];
+        let [
+            mango_group_acc,
+            admin_acc,
+        ] = accounts;
+
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc,
+            program_id
+        )?;
+
+        prog_assert_eq!(admin_acc.key, &mango_group.admin)?;
+        prog_assert!(admin_acc.is_signer)?;
+
+        mango_group.borrow_limits[token_index] = borrow_limit;
+        Ok(())
+    }
+
     #[inline(never)]
     fn place_order(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         order: serum_dex::instruction::NewOrderInstructionV3
     ) -> MangoResult<()> {
-        // TODO if account is below init_margin_ratio then allow reducing orders
         // TODO disallow limit prices that would put account below initCollRatio
 
         const NUM_FIXED: usize = 17;
@@ -711,6 +741,7 @@ impl Processor {
             let rem_spend = U64F64::from_num(spent - native_deposit);
 
             checked_add_borrow(&mut mango_group, &mut margin_account, token_i , rem_spend / index.borrow)?;
+            prog_assert!(margin_account.get_native_borrow(&index, token_i) <= mango_group.borrow_limits[token_i])?;
         }
 
         let prices = get_prices(&mango_group, oracle_accs)?;
@@ -913,10 +944,10 @@ impl Processor {
         let instruction = MangoInstruction::unpack(data).ok_or(ProgramError::InvalidInstructionData)?;
         match instruction {
             MangoInstruction::InitMangoGroup {
-                signer_nonce, maint_coll_ratio, init_coll_ratio
+                signer_nonce, maint_coll_ratio, init_coll_ratio, borrow_limits
             } => {
                 msg!("InitMangoGroup");
-                Self::init_mango_group(program_id, accounts, signer_nonce, maint_coll_ratio, init_coll_ratio)?;
+                Self::init_mango_group(program_id, accounts, signer_nonce, maint_coll_ratio, init_coll_ratio, borrow_limits)?;
             }
             MangoInstruction::InitMarginAccount => {
                 msg!("InitMarginAccount");
@@ -990,6 +1021,13 @@ impl Processor {
             } => {
                 msg!("CancelOrderByClientId");
                 Self::cancel_order(program_id, accounts, client_id.to_le_bytes().to_vec())?;
+            }
+
+            MangoInstruction::ChangeBorrowLimit {
+                token_index, borrow_limit
+            } => {
+                msg!("ChangeBorrowLimit");
+                Self::change_borrow_limit(program_id, accounts, token_index, borrow_limit)?;
             }
         }
         Ok(())
@@ -1092,8 +1130,6 @@ pub fn get_prices(
 ) -> MangoResult<[U64F64; NUM_TOKENS]> {
     let mut prices = [U64F64::from_num(0); NUM_TOKENS];
     prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
-    // prog_assert_eq!(mint_accs[NUM_MARKETS].key, &mango_group.tokens[NUM_MARKETS])?;
-    // let quote_mint = Mint::unpack(&mint_accs[NUM_MARKETS].try_borrow_data()?)?;
     let quote_decimals: u8 = mango_group.mint_decimals[NUM_MARKETS];
 
     for i in 0..NUM_MARKETS {
@@ -1104,11 +1140,8 @@ pub fn get_prices(
             10u64.pow(quote_decimals.checked_sub(mango_group.oracle_decimals[i]).unwrap() as u32)
         );
 
-        let value = flux_aggregator::get_median(&oracle_accs[i])?; // this is in USD cents
-        let value = U64F64::from_num(value);
-
-        // prog_assert_eq!(mint_accs[i].key, &mango_group.tokens[i])?;
-        // let mint = Mint::unpack(&mint_accs[i].try_borrow_data()?)?;
+        let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
+        let value = U64F64::from_num(answer.median);
 
         let base_adj = U64F64::from_num(10u64.pow(mango_group.mint_decimals[i] as u32));
         prices[i] = quote_adj
@@ -1117,3 +1150,8 @@ pub fn get_prices(
     }
     Ok(prices)
 }
+
+
+/*
+TODO liquidator cancel - allow liquidators to cancel open orders that would worsen collateral ratio
+*/

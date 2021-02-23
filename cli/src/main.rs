@@ -1,30 +1,26 @@
-use std::{thread, time};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::mem::size_of;
 use std::str::FromStr;
 
-use anyhow::{Result};
+use anyhow::Result;
 use arrayref::array_ref;
 use clap::Clap;
 use common::{Cluster, convert_assertion_error, create_account_rent_exempt,
              create_signer_key_and_nonce, create_token_account, read_keypair_file, send_instructions};
 use fixed::types::U64F64;
-use mango::instruction::{borrow, deposit, init_mango_group, init_margin_account, liquidate, withdraw, settle_borrow};
+use mango::instruction::{borrow, change_borrow_limit, deposit, init_mango_group, init_margin_account, settle_borrow, withdraw};
 use mango::processor::get_prices;
 use mango::state::{Loadable, MangoGroup, MarginAccount, NUM_MARKETS, NUM_TOKENS};
 use serde_json::{json, Value};
 use solana_client::rpc_client::RpcClient;
-use solana_client::rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
-use solana_client::rpc_filter::{Memcmp, MemcmpEncodedBytes, RpcFilterType};
 use solana_client::rpc_request::TokenAccountsFilter;
-use solana_client::rpc_response::RpcKeyedAccount;
 use solana_sdk::account::{Account, create_account_infos};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::signature::Signer;
 
 #[derive(Clap, Debug)]
 pub struct Opts {
@@ -45,6 +41,8 @@ pub enum Command {
         tokens: Vec<String>,
         #[clap(long, short)]
         mango_program_id: Option<String>,
+        #[clap(long, short)]
+        borrow_limits: Vec<f64>,
     },
     InitMarginAccount {
         #[clap(long, short)]
@@ -120,14 +118,6 @@ pub enum Command {
         #[clap(long, short)]
         filepath: Option<String>,
     },
-    RunLiquidator {
-        #[clap(long, short)]
-        ids_path: String,
-        #[clap(long, short)]
-        payer: String,
-        #[clap(long, short)]
-        mango_group_name: String,
-    },
 
     PlaceOrder {
 
@@ -138,13 +128,6 @@ pub enum Command {
     CancelOrder {
 
     },
-
-    PrintPrices {
-        #[clap(long, short)]
-        ids_path: String,
-        #[clap(long, short)]
-        mango_group_name: String,
-    },
     PrintMarginAccountInfo {
         #[clap(long, short)]
         ids_path: String,
@@ -152,6 +135,19 @@ pub enum Command {
         mango_group_name: String,
         #[clap(long)]
         margin_account: String
+    },
+
+    ChangeBorrowLimit {
+        #[clap(long, short)]
+        payer: String,  // assumes for now payer is same as admin
+        #[clap(long, short)]
+        ids_path: String,
+        #[clap(long)]
+        mango_group_name: String,
+        #[clap(long)]
+        token_symbol: String,
+        #[clap(long)]
+        borrow_limit: f64
     }
 }
 
@@ -170,159 +166,6 @@ fn get_accounts(client: &RpcClient, pks: &[Pubkey]) -> Vec<(Pubkey, Account)> {
         .enumerate()
         .map(|(i, a)| (pks[i], a.as_ref().unwrap().clone()))
         .collect()
-}
-
-fn run_liquidator(
-    client: &RpcClient,
-    cids: ClusterIds,
-    mgids: MangoGroupIds,
-    liqor_kp: &Keypair
-) -> Result<()> {
-    // TODO
-    /*
-        place_order
-        cancel_order
-        settle_funds
-     */
-
-    let sleep_time = time::Duration::from_secs(2);
-
-    let mango_group_acc = client.get_account(&mgids.mango_group_pk)?;
-    let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
-    let min_coll_ratio = U64F64::from_num(1.02);
-
-    let liqor_token_accounts: Vec<RpcKeyedAccount> = mgids.mint_pks.iter().map(
-        |pk| client.get_token_accounts_by_owner_with_commitment(
-            &liqor_kp.pubkey(),
-            TokenAccountsFilter::Mint(*pk),
-            CommitmentConfig::confirmed()
-        ).unwrap().value[0].clone()
-    ).collect();
-    let liqor_token_account_pks: Vec<Pubkey> = liqor_token_accounts.iter().map(
-        |rka| Pubkey::from_str(&rka.pubkey).unwrap()
-    ).collect();
-
-    loop {
-        let t0 = time::SystemTime::now();
-        let mut oracle_accs = get_accounts(client, &mgids.oracle_pks);
-        let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
-        let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
-
-        let prices = get_prices(mango_group, oracle_accs)?;
-
-        // fetch all margin accounts
-        let config = RpcProgramAccountsConfig {
-            filters: Some(vec![
-                RpcFilterType::Memcmp(Memcmp {
-                    offset: 8,
-                    bytes: MemcmpEncodedBytes::Binary(mgids.mango_group_pk.to_string()),
-                    encoding: None
-                }),
-                RpcFilterType::DataSize(size_of::<MarginAccount>() as u64)
-            ]),
-            account_config: RpcAccountInfoConfig::default()
-        };
-        let result = client.get_program_accounts_with_config(&cids.mango_program_id, config)?;
-
-        // Go to each margin account and check collateral
-        for (pk, margin_account_acc) in result.iter() {
-            let margin_account = MarginAccount::load_from_bytes(margin_account_acc.data.as_slice())?;
-
-            let mut open_orders_accs = get_accounts(client, &margin_account.open_orders);
-            let open_orders_accs = create_account_infos(open_orders_accs.as_mut_slice());
-            let open_orders_accs = array_ref![open_orders_accs.as_slice(), 0, NUM_MARKETS];
-
-
-            let coll_ratio = margin_account.get_collateral_ratio(mango_group, &prices, open_orders_accs)?;
-
-            println!("{} {} {}", pk, margin_account.owner, coll_ratio);
-            println!("{} {} {}", margin_account.deposits[0], margin_account.deposits[1], margin_account.deposits[2]);
-            println!("{} {} {}", margin_account.borrows[0], margin_account.borrows[1], margin_account.borrows[2]);
-            // println!("{} {} {}\n", margin_account.positions[0], margin_account.positions[1], margin_account.positions[2]);
-
-            if coll_ratio < mango_group.maint_coll_ratio && coll_ratio >= min_coll_ratio {
-                // determine how much to deposit to get the account above init coll ratio
-                let deficit = margin_account.get_collateral_deficit(
-                    mango_group,
-                    &prices,
-                    open_orders_accs
-                )?;
-
-                println!("Sending liquidation instruction");
-                let instruction = liquidate(
-                    &cids.mango_program_id,
-                    &mgids.mango_group_pk,
-                    &liqor_kp.pubkey(),
-                    pk,
-                    open_orders_accs.iter().map(|a| *a.key).collect::<Vec<Pubkey>>().as_slice(),
-                    mgids.oracle_pks.as_slice(),
-                    &mango_group.vaults,
-                    liqor_token_account_pks.as_slice(),
-                    [0, 0, deficit * 101 / 100]
-                )?;
-                let instructions = vec![instruction];
-                let signers = vec![liqor_kp];
-                match send_instructions(&client, instructions, signers, &liqor_kp.pubkey()) {
-                    Ok(()) => {
-                        println!("Successfully taken ownership of the MarginAccount");
-                        // 1. cancel all outstanding orders and settle funds into MarginAccount
-                        //      a. load all outstanding orders
-                        //      b. cancel each one using its order id
-                        // 2. for each of the borrowed assets, see how to close them
-                        // 3. then send closing orders for them
-
-                        /*
-                            Load outstanding orders:
-                            need to fetch the bids and asks
-                            iterate through and filter for orders owned by this user
-
-                         */
-
-                    }
-                    Err(e) => {
-                        println!("{}", e);
-                    }
-                }
-            }
-
-        }
-
-        let elapsed = time::SystemTime::now().duration_since(t0)?.as_millis();
-        println!("{}", elapsed);
-        // update prices using oracle
-        // calculate collateralization ratio for each of them
-        // if coll ratio below maint_coll_ratio
-        //  check if you have enough funds to liquidate it
-        //  if you do have enough funds, send liquidation instruction
-        //  once you own the margin account, now send sell orders in the dex to get rid of them
-        // cancel orders in the margin account first
-        // then withdraw all funds from the margin account and (delete?)
-
-        println!("sleeping");
-        thread::sleep(sleep_time);
-    }
-}
-
-fn print_prices(
-    client: &RpcClient,
-    cids: ClusterIds,
-    mango_group_name: String,
-) -> Result<()> {
-    let mgids = &cids.mango_groups[&mango_group_name];
-
-    let mango_group_acc = client.get_account(&mgids.mango_group_pk)?;
-    let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
-
-    let mut oracle_accs = get_accounts(client, &mgids.oracle_pks);
-    let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
-    let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
-
-    let prices = get_prices(mango_group, oracle_accs)?;
-    let names: Vec<&str> = mango_group_name.split("_").collect();
-    for i in 0..prices.len() {
-        println!("{} {}", names[i], prices[i]);
-    }
-    Ok(())
 }
 
 
@@ -392,7 +235,8 @@ pub fn start(opts: Opts) -> Result<()> {
             payer,
             ids_path,
             tokens,
-            mango_program_id
+            mango_program_id,
+            borrow_limits
         } => {
             println!("InitMangoGroup");
             let payer = read_keypair_file(payer.as_str())?;
@@ -452,6 +296,13 @@ pub fn start(opts: Opts) -> Result<()> {
                 oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
             }
 
+            let mut borr_lims = [0u64; NUM_TOKENS];
+            for i in 0..NUM_TOKENS {
+                let mint_acc = client.get_account(&mint_pks[i])?;
+                let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
+                borr_lims[i] = spl_token::ui_amount_to_amount(borrow_limits[i], mint.decimals);
+            }
+
             // Send out instruction
             let instruction = init_mango_group(
                 &mango_program_id,
@@ -459,13 +310,15 @@ pub fn start(opts: Opts) -> Result<()> {
                 &signer_key,
                 &dex_program_id,
                 &srm_vault_pk,
+                &payer.pubkey(),
                 mint_pks.as_slice(),
                 vault_pks.as_slice(),
                 spot_market_pks.as_slice(),
                 oracle_pks.as_slice(),
                 signer_nonce,
                 U64F64::from_num(1.1),
-                U64F64::from_num(1.2)
+                U64F64::from_num(1.2),
+                borr_lims
             )?;
             let instructions = vec![instruction];
             let signers = vec![&payer];
@@ -727,31 +580,7 @@ pub fn start(opts: Opts) -> Result<()> {
                 }
             }
         }
-        Command::RunLiquidator {
-            payer,
-            ids_path ,
-            mango_group_name
-        } => {
-            println!("RunLiquidator");
-            let payer = read_keypair_file(payer.as_str())?;
-            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
-            let cluster_name = opts.cluster.name();
-            let cluster_ids = &ids[cluster_name];
-            let cids = ClusterIds::load(cluster_ids);
-            let mgids = cids.mango_groups[&mango_group_name].clone();
-            run_liquidator(&client, cids, mgids, &payer)?;
-        }
-        Command::PrintPrices {
-            ids_path,
-            mango_group_name
-        } => {
-            println!("PrintPrices");
-            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
-            let cluster_name = opts.cluster.name();
-            let cluster_ids = &ids[cluster_name];
-            let cids = ClusterIds::load(cluster_ids);
-            print_prices(&client, cids, mango_group_name)?;
-        }
+
         Command::PrintMarginAccountInfo {
             ids_path,
             mango_group_name,
@@ -851,6 +680,38 @@ pub fn start(opts: Opts) -> Result<()> {
         Command::PlaceOrder { .. } => {}
         Command::SettleFunds { .. } => {}
         Command::CancelOrder { .. } => {}
+        Command::ChangeBorrowLimit {
+            payer,
+            ids_path,
+            mango_group_name,
+            token_symbol,
+            borrow_limit
+        } => {
+            println!("ChangeBorrowLimit");
+            let payer = read_keypair_file(payer.as_str())?;
+            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
+            let cluster_name = opts.cluster.name();
+            let cluster_ids = &ids[cluster_name];
+            let cids = ClusterIds::load(cluster_ids);
+            let mgids = cids.mango_groups[&mango_group_name].clone();
+
+            let token_pk = &cids.symbols[&token_symbol];
+            let token_i = mgids.get_token_index(token_pk).unwrap();
+
+            let mint_acc = client.get_account(token_pk)?;
+            let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
+            let instruction = change_borrow_limit(
+                &cids.mango_program_id,
+                &mgids.mango_group_pk,
+                &payer.pubkey(),
+                token_i,
+                spl_token::ui_amount_to_amount(borrow_limit, mint.decimals)
+
+            )?;
+            let instructions = vec![instruction];
+            let signers = vec![&payer];
+            send_instructions(&client, instructions, signers, &payer.pubkey())?;
+        }
     }
     Ok(())
 }

@@ -17,7 +17,7 @@ use crate::state::NUM_TOKENS;
 pub enum MangoInstruction {
     /// Initialize a group of lending pools that can be cross margined
     ///
-    /// Accounts expected by this instruction (6 + 2 * NUM_TOKENS + 2 * NUM_MARKETS):
+    /// Accounts expected by this instruction (7 + 2 * NUM_TOKENS + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - the data account to store mango group state vars
     /// 1. `[]` rent_acc - Rent sysvar account
@@ -25,21 +25,23 @@ pub enum MangoInstruction {
     /// 3. `[]` signer_acc - pubkey of program_id hashed with signer_nonce and mango_group_acc.key
     /// 4. `[]` dex_prog_acc - program id of serum dex
     /// 5. `[]` srm_vault_acc - vault for fee tier reductions
-    /// 6..6+NUM_TOKENS `[]` token_mint_accs - mint of each token in the same order as the spot
+    /// 6. `[signer]` admin_acc - admin key who can change borrow limits
+    /// 7..7+NUM_TOKENS `[]` token_mint_accs - mint of each token in the same order as the spot
     ///     markets. Quote currency mint should be last.
     ///     e.g. for spot markets BTC/USDC, ETH/USDC -> [BTC, ETH, USDC]
     ///
-    /// 6+NUM_TOKENS..6+2*NUM_TOKENS `[]`
+    /// 7+NUM_TOKENS..7+2*NUM_TOKENS `[]`
     ///     vault_accs - Vault owned by signer_acc.key for each of the mints
     ///
-    /// 6+2*NUM_TOKENS..6+2*NUM_TOKENS+NUM_MARKETS `[]`
+    /// 7+2*NUM_TOKENS..7+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
-    /// 6+2*NUM_TOKENS+NUM_MARKETS..6+2*NUM_TOKENS+2*NUM_MARKETS `[]`
-    ///     oracle_accs - Solink Feed accounts corresponding to each trading pair
+    /// 7+2*NUM_TOKENS+NUM_MARKETS..7+2*NUM_TOKENS+2*NUM_MARKETS `[]`
+    ///     oracle_accs - Solana Flux Aggregator accounts corresponding to each trading pair
     InitMangoGroup {
         signer_nonce: u64,
         maint_coll_ratio: U64F64,
-        init_coll_ratio: U64F64
+        init_coll_ratio: U64F64,
+        borrow_limits: [u64; NUM_TOKENS]
     },
 
     /// Initialize a margin account for a user
@@ -257,6 +259,20 @@ pub enum MangoInstruction {
     CancelOrderByClientId {
         client_id: u64
     },
+
+    /// Change the borrow limit using admin key. This will not affect any open positions on any MarginAccount
+    /// This is intended to be an instruction only in alpha stage while liquidity is slowly improved
+    ///
+    /// Accounts expected by this instruction (2):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` admin_acc - admin of the MangoGroup
+    ChangeBorrowLimit {
+        token_index: usize,
+        borrow_limit: u64
+    },
+
+
 }
 
 
@@ -266,16 +282,23 @@ impl MangoInstruction {
         let discrim = u32::from_le_bytes(discrim);
         Some(match discrim {
             0 => {
-                let data = array_ref![data, 0, 40];
+                let data = array_ref![data, 0, 40 + 8 * NUM_TOKENS];
                 let (
                     signer_nonce,
                     maint_coll_ratio,
-                    init_coll_ratio
-                ) = array_refs![data, 8, 16, 16];
+                    init_coll_ratio,
+                    borrow_limits
+                ) = array_refs![data, 8, 16, 16, 8 * NUM_TOKENS];
+
+                let mut aligned_borrow_limits = [0u64; NUM_TOKENS];
+                let buffer: &mut [u8] = cast_slice_mut(&mut aligned_borrow_limits);
+                buffer.copy_from_slice(borrow_limits);
+
                 MangoInstruction::InitMangoGroup {
                     signer_nonce: u64::from_le_bytes(*signer_nonce),
                     maint_coll_ratio: U64F64::from_le_bytes(*maint_coll_ratio),
-                    init_coll_ratio: U64F64::from_le_bytes(*init_coll_ratio)
+                    init_coll_ratio: U64F64::from_le_bytes(*init_coll_ratio),
+                    borrow_limits: aligned_borrow_limits
                 }
             }
             1 => {
@@ -368,6 +391,14 @@ impl MangoInstruction {
                 }
 
             }
+            13 => {
+                let data = array_ref![data, 0, 16];
+                let (token_index, borrow_limit) = array_refs![data, 8, 8];
+                MangoInstruction::ChangeBorrowLimit {
+                    token_index: usize::from_le_bytes(*token_index),
+                    borrow_limit: u64::from_le_bytes(*borrow_limit)
+                }
+            }
             _ => { return None; }
         })
     }
@@ -423,13 +454,15 @@ pub fn init_mango_group(
     signer_pk: &Pubkey,
     dex_prog_id: &Pubkey,
     srm_vault_pk: &Pubkey,
+    admin_pk: &Pubkey,
     mint_pks: &[Pubkey],
     vault_pks: &[Pubkey],
     spot_market_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
     signer_nonce: u64,
     maint_coll_ratio: U64F64,
-    init_coll_ratio: U64F64
+    init_coll_ratio: U64F64,
+    borrow_limits: [u64; NUM_TOKENS]
 ) -> Result<Instruction, ProgramError> {
     let mut accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
@@ -437,7 +470,8 @@ pub fn init_mango_group(
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
         AccountMeta::new_readonly(*signer_pk, false),
         AccountMeta::new_readonly(*dex_prog_id, false),
-        AccountMeta::new_readonly(*srm_vault_pk, false)
+        AccountMeta::new_readonly(*srm_vault_pk, false),
+        AccountMeta::new_readonly(*admin_pk, true)
     ];
     accounts.extend(mint_pks.iter().map(
         |pk| AccountMeta::new_readonly(*pk, false))
@@ -452,7 +486,13 @@ pub fn init_mango_group(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::InitMangoGroup { signer_nonce, maint_coll_ratio, init_coll_ratio };
+    let instr = MangoInstruction::InitMangoGroup {
+        signer_nonce,
+        maint_coll_ratio,
+        init_coll_ratio,
+        borrow_limits
+    };
+
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
@@ -878,4 +918,27 @@ pub fn cancel_order_by_client_id(
         data
     })
 }
+
+
+pub fn change_borrow_limit(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    admin_pk: &Pubkey,
+    token_index: usize,
+    borrow_limit: u64
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*admin_pk, true),
+    ];
+
+    let instr = MangoInstruction::ChangeBorrowLimit { token_index, borrow_limit };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
 
