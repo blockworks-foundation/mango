@@ -184,27 +184,42 @@ impl MangoGroup {
         for i in 0..NUM_TOKENS {
             let interest_rate = self.get_interest_rate(i);
             let index: &mut MangoIndex = &mut self.indexes[i];
-            if index.last_update == curr_ts || self.total_deposits[i] == 0 {
+            if index.last_update == curr_ts || self.total_deposits[i] == U64F64::from_num(0) {
                 // TODO is skipping when total_deposits == 0 correct move?
                 continue;
             }
 
-            let native_deposits = self.total_deposits[i] * index.deposit;
+            let native_deposits: U64F64 = self.total_deposits[i] * index.deposit;
             let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
             prog_assert!(native_borrows <= native_deposits)?;
 
             let utilization = native_borrows.checked_div(native_deposits).unwrap();
             let borrow_interest = interest_rate
-                .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
-                .checked_add(U64F64::from_num(1)).unwrap();
+                .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap();
 
-            let deposit_interest = interest_rate
-                .checked_mul(utilization).unwrap()
-                .checked_add(U64F64::from_num(1)).unwrap();
+            let deposit_interest = borrow_interest
+                .checked_mul(utilization).unwrap();
 
             index.last_update = curr_ts;
-            index.borrow = index.borrow.checked_mul(borrow_interest).unwrap();
-            index.deposit = index.deposit.checked_mul(deposit_interest).unwrap();
+            index.borrow = index.borrow.checked_mul(borrow_interest).unwrap()
+                .checked_add(index.borrow).unwrap();
+
+            index.deposit = index.deposit.checked_mul(deposit_interest).unwrap()
+                .checked_add(index.deposit).unwrap();
+
+            // let utilization = native_borrows.checked_div(native_deposits).unwrap();
+            // let borrow_interest = interest_rate
+            //     .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
+            //     .checked_add(U64F64::from_num(1)).unwrap();
+            //
+            // let deposit_interest = interest_rate
+            //     .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
+            //     .checked_mul(utilization).unwrap()
+            //     .checked_add(U64F64::from_num(1)).unwrap();
+            //
+            // index.last_update = curr_ts;
+            // index.borrow = index.borrow.checked_mul(borrow_interest).unwrap();
+            // index.deposit = index.deposit.checked_mul(deposit_interest).unwrap();
         }
         Ok(())
     }

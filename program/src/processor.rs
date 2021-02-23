@@ -14,7 +14,7 @@ use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack};
 use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
-use solana_program::sysvar::Sysvar;
+use solana_program::sysvar::{Sysvar};
 use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoResult, SourceFileId};
@@ -66,8 +66,13 @@ impl Processor {
             srm_vault_acc,
             admin_acc
         ] = fixed_accs;
+
+        // Note: no need to check rent and clock because they're being checked in from_account_info
         let rent = Rent::from_account_info(rent_acc)?;
         let clock = Clock::from_account_info(clock_acc)?;
+
+        // TODO this may not be necessary since load_mut maps the data and will fail if size incorrect
+        prog_assert_eq!(size_of::<MangoGroup>(), mango_group_acc.data_len())?;
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
 
         prog_assert_eq!(mango_group_acc.owner, program_id)?;
@@ -148,7 +153,7 @@ impl Processor {
             rent_acc
         ] = accounts;
 
-        MangoGroup::load_checked(mango_group_acc, program_id)?;
+        let _mango_group = MangoGroup::load_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut(margin_account_acc)?;
         let rent = Rent::from_account_info(rent_acc)?;
 
@@ -191,8 +196,7 @@ impl Processor {
         let token_index = mango_group.get_token_index_with_vault(vault_acc.key).unwrap();
         prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
-        // TODO check spl token program
-
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
         let deposit_instruction = spl_token::instruction::transfer(
             &spl_token::id(),
             token_account_acc.key,
@@ -275,6 +279,7 @@ impl Processor {
         prog_assert!(mango_group.has_valid_deposits_borrows(token_index))?;
 
         // Send out withdraw instruction to SPL token program
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
         let withdraw_instruction = spl_token::instruction::transfer(
             &spl_token::ID,
             vault_acc.key,
@@ -445,6 +450,7 @@ impl Processor {
         }
 
         // Pull deposits from liqor's token wallets
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
         for i in 0..NUM_TOKENS {
             let quantity = deposit_quantities[i];
             if quantity == 0 {
@@ -508,7 +514,7 @@ impl Processor {
         mango_group.update_indexes(&clock)?;
 
         prog_assert_eq!(vault_acc.key, &mango_group.srm_vault)?;
-
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
         let deposit_instruction = spl_token::instruction::transfer(
             &spl_token::id(),
             srm_account_acc.key,
@@ -557,10 +563,11 @@ impl Processor {
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
         prog_assert_eq!(vault_acc.key, &mango_group.srm_vault)?;
         prog_assert!(margin_account.srm_balance >= quantity)?;
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
 
         // Send out withdraw instruction to SPL token program
         let withdraw_instruction = spl_token::instruction::transfer(
-            &spl_token::ID,
+            &spl_token::id(),
             vault_acc.key,
             srm_account_acc.key,
             signer_acc.key,
@@ -580,7 +587,6 @@ impl Processor {
         Ok(())
     }
 
-    // TODO add
     fn change_borrow_limit(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -630,9 +636,9 @@ impl Processor {
             dex_prog_acc,
             spot_market_acc,
             dex_request_queue_acc,
-            dex_event_queue_acc, // ***
-            bids_acc,  // ***
-            asks_acc,  // ***
+            dex_event_queue_acc,
+            bids_acc,
+            asks_acc,
             vault_acc,
             signer_acc,
             dex_base_acc,
@@ -641,7 +647,6 @@ impl Processor {
             rent_acc,
             srm_vault_acc,
         ] = fixed_accs;
-
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
@@ -681,6 +686,8 @@ impl Processor {
             }
         }
 
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
+        prog_assert_eq!(dex_prog_acc.key, &mango_group.dex_program_id)?;
         let data = serum_dex::instruction::MarketInstruction::NewOrderV3(order).pack();
         let instruction = Instruction {
             program_id: *dex_prog_acc.key,
@@ -809,6 +816,8 @@ impl Processor {
         prog_assert_eq!(&margin_account.open_orders[market_i], open_orders_acc.key)?;
         prog_assert_eq!(base_vault_acc.key, &mango_group.vaults[market_i])?;
         prog_assert_eq!(quote_vault_acc.key, &mango_group.vaults[NUM_MARKETS])?;
+        prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
+        prog_assert_eq!(dex_prog_acc.key, &mango_group.dex_program_id)?;
 
         if *open_orders_acc.key == Pubkey::default() {
             return Ok(());
@@ -822,6 +831,7 @@ impl Processor {
         if pre_base == 0 && pre_quote == 0 {
             return Ok(());
         }
+
 
         let data = serum_dex::instruction::MarketInstruction::SettleFunds.pack();
         let instruction = Instruction {
@@ -900,6 +910,7 @@ impl Processor {
         )?;
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
+        prog_assert_eq!(dex_prog_acc.key, &mango_group.dex_program_id)?;
 
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
