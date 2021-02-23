@@ -179,6 +179,11 @@ impl MangoGroup {
     }
 
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
+        // TODO verify what happens if total_deposits < total_borrows
+        // TODO verify what happens if total_deposits == 0 && total_borrows > 0
+        // TODO What are cases where borrows is greater than deposits?
+        // TODO total_borrows may be greater than total_deposits if rounding error
+
         let curr_ts = clock.unix_timestamp as u64;
 
         for i in 0..NUM_TOKENS {
@@ -191,7 +196,8 @@ impl MangoGroup {
 
             let native_deposits: U64F64 = self.total_deposits[i] * index.deposit;
             let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
-            prog_assert!(native_borrows <= native_deposits)?;
+            let epsilon = U64F64::min_positive_value() * 100;
+            prog_assert!(native_borrows <= native_deposits + epsilon)?;  // to account for rounding errors
 
             let utilization = native_borrows.checked_div(native_deposits).unwrap();
             let borrow_interest = interest_rate
