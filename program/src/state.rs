@@ -8,11 +8,11 @@ use fixed::types::U64F64;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
+use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
 use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
-
 
 /// Initially launching with BTC/USDT, ETH/USDT
 pub const NUM_TOKENS: usize = 3;
@@ -212,20 +212,6 @@ impl MangoGroup {
 
             index.deposit = index.deposit.checked_mul(deposit_interest).unwrap()
                 .checked_add(index.deposit).unwrap();
-
-            // let utilization = native_borrows.checked_div(native_deposits).unwrap();
-            // let borrow_interest = interest_rate
-            //     .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
-            //     .checked_add(U64F64::from_num(1)).unwrap();
-            //
-            // let deposit_interest = interest_rate
-            //     .checked_mul(U64F64::from_num(curr_ts - index.last_update)).unwrap()
-            //     .checked_mul(utilization).unwrap()
-            //     .checked_add(U64F64::from_num(1)).unwrap();
-            //
-            // index.last_update = curr_ts;
-            // index.borrow = index.borrow.checked_mul(borrow_interest).unwrap();
-            // index.deposit = index.deposit.checked_mul(deposit_interest).unwrap();
         }
         Ok(())
     }

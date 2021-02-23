@@ -740,6 +740,14 @@ fn map_of_pks_to_strs(map: HashMap<String, Pubkey>) -> HashMap<String, String> {
 }
 
 fn main() {
+    let b0 = U64F64::from_num(0.000000);
+    let b1 = U64F64::from_num(0.00000000201332012585);
+
+    let year = U64F64::from_num(365 * 24 * 60 * 60);
+    let time_diff = U64F64::from_num(6);
+    let r = (b1 - b0) * year / time_diff;
+    println!("{}", r.to_string());
+
     let opts = Opts::parse();
     start(opts).unwrap();
 }

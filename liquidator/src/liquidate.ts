@@ -24,8 +24,6 @@ async function runLiquidator() {
   const keyPairPath = '/home/dd/.config/solana/id.json'
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
-
-
   // TODO fetch these automatically
   const tokenWallets = [
     new PublicKey("HLoPtihB8oETm1kkTpx17FEnXm7afQdS4hojTNvbg3Rg"),
