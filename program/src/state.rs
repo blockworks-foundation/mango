@@ -196,7 +196,7 @@ impl MangoGroup {
 
             let native_deposits: U64F64 = self.total_deposits[i] * index.deposit;
             let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
-            let epsilon = U64F64::min_positive_value() * 100;
+            let epsilon = U64F64::from_bits(1u128) * 100;
             prog_assert!(native_borrows <= native_deposits + epsilon)?;  // to account for rounding errors
 
             let utilization = native_borrows.checked_div(native_deposits).unwrap();

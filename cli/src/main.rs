@@ -740,8 +740,6 @@ fn map_of_pks_to_strs(map: HashMap<String, Pubkey>) -> HashMap<String, String> {
 }
 
 fn main() {
-    println!("{} {}", spl_token::id().to_string(), spl_token::ID.to_string());
     let opts = Opts::parse();
     start(opts).unwrap();
-
 }
