@@ -244,6 +244,7 @@ impl MangoGroup {
 }
 
 
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct MarginAccount {
@@ -263,6 +264,8 @@ pub struct MarginAccount {
     // These SRM are not at risk and have no effect on any margin calculations.
     // Depositing srm is a strictly altruistic act with no upside and no downside
     pub srm_balance: u64,
+
+    // TODO add has_borrows field for easy memcmp fetching
 }
 impl_loadable!(MarginAccount);
 

@@ -8,6 +8,8 @@
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/index.ts",
+    "liquidate": "ts-node src/liquidate.ts",
+    "test": "ts-node src/test.ts",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
     "prepare": "run-s clean build",
@@ -31,6 +33,7 @@
   "dependencies": {
     "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git",
     "@project-serum/serum": "^0.13.20",
+    "@solana/spl-token": "0.0.13",
     "@solana/web3.js": "^0.90.0",
     "bn.js": "^5.1.3",
     "buffer-layout": "^1.2.0",
