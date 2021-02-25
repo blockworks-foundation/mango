@@ -136,12 +136,11 @@ async function testTokenCall() {
 }
 
 async function testServer() {
-
-  const client = new MangoClient()
   const cluster = 'mainnet-beta'
-
-  const clusterUrl = process.env.CLUSTER_URL
-  if (!clusterUrl) { return }
+  let clusterUrl = process.env.CLUSTER_URL
+  if (!clusterUrl) {
+    clusterUrl = IDS['cluster_urls'][cluster]
+  }
   const connection = new Connection(clusterUrl, 'singleGossip')
   const usdtKey = new PublicKey(IDS[cluster]['symbols']['USDT'])
   const filters = [
@@ -159,11 +158,7 @@ async function testServer() {
   const t0 = getUnixTs()
   const accounts = await getFilteredProgramAccounts(connection, TOKEN_PROGRAM_ID, filters)
   const t1 = getUnixTs()
-  console.log(accounts.length, t1 - t0)
+  console.log(accounts.length, t1 - t0, accounts.length * AccountLayout.span)
 }
 
 testServer()
-
-
-
-

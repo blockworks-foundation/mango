@@ -1,12 +1,46 @@
 // TODO make sure funds in liquidatable account can actually be withdrawn
 //    -- can't be withdrawn if total deposits == total_borrows
 
-import { IDS, MangoClient, NUM_TOKENS } from '@mango/client';
+import { IDS, MangoClient, MangoGroup, MarginAccount, MarginAccountLayout, NUM_TOKENS } from '@mango/client';
 import { Account, Connection, LAMPORTS_PER_SOL, PublicKey, TransactionSignature } from '@solana/web3.js';
 import fs from 'fs';
-import { Market } from '@project-serum/serum';
+import { Market, OpenOrders } from '@project-serum/serum';
 import { NUM_MARKETS } from '@mango/client/lib/layout';
 import { getUnixTs, sleep } from './utils';
+import { getFilteredProgramAccounts } from '@mango/client/lib/utils';
+
+
+// async function getAllMarginAccounts(
+//   connection: Connection,
+//   programId: PublicKey,
+//   mangoGroup: MangoGroup
+// ): Promise<MarginAccount[]> {
+//
+//   const filters = [
+//     {
+//       memcmp: {
+//         offset: MarginAccountLayout.offsetOf('mangoGroup'),
+//         bytes: mangoGroup.publicKey.toBase58(),
+//       },
+//     },
+//
+//     {
+//       dataSize: MarginAccountLayout.span,
+//     },
+//   ];
+//
+//   const accounts = await getFilteredProgramAccounts(connection, programId, filters);
+//
+//   const marginAccounts = accounts.map(
+//     ({ publicKey, accountInfo }) =>
+//       new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo == null ? undefined : accountInfo.data))
+//   )
+//
+//   await Promise.all(marginAccounts.map((ma) => ma.loadOpenOrders(connection, mangoGroup.dexProgramId)))
+//
+//   return marginAccounts
+// }
+
 
 async function runLiquidator() {
   const client = new MangoClient()
@@ -44,16 +78,17 @@ async function runLiquidator() {
   // Find a way to get all margin accounts without querying fresh--get incremental updates to margin accounts
   while (true) {
     mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+    console.log(mangoGroup.srmVault.toBase58())
     const t0 = getUnixTs()
     const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroup)
     const t1 = getUnixTs()
     console.log('time', t1 - t0, marginAccounts.length)
 
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
+    console.log(prices)
     for (let ma of marginAccounts) {  // parallelize this if possible
       const assetsVal = ma.getAssetsVal(mangoGroup, prices)
       const liabsVal = ma.getLiabsVal(mangoGroup, prices)
-      // console.log(ma.toPrettyString(mangoGroup, prices), '\n')
 
       if (liabsVal === 0) {
         continue
@@ -66,6 +101,12 @@ async function runLiquidator() {
 
       const deficit = liabsVal * mangoGroup.initCollRatio - assetsVal
       console.log('liquidatable', deficit)
+
+      console.log(ma.toPrettyString(mangoGroup, prices), '\n')
+
+      for (let i = 0; i < ma.openOrders.length; i++) {
+        console.log(ma.openOrders[i].toBase58(), ma.openOrdersAccounts[i]?.quoteTokenTotal)
+      }
 
       // handle undercoll case separately
       if (collRatio < 1) {
