@@ -64,7 +64,7 @@ async function runLiquidator() {
   const tokenWallets = [
     new PublicKey("HLoPtihB8oETm1kkTpx17FEnXm7afQdS4hojTNvbg3Rg"),
     new PublicKey("8ASVNBAo94RnJCABYybnkJnXGpBHan2svW3pRsKdbn7s"),
-    new PublicKey("GBBtcVE7WA8qdrHyhWTZkYDaz71EVHsg7wVaca9iq9xs")
+    new PublicKey("Fy2bjbGpUfXK7jwsNwsnFvXkJfLVUzbWNqFwzMQ9vDFC")
   ]
 
   let mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
@@ -102,9 +102,6 @@ async function runLiquidator() {
 
       console.log(ma.toPrettyString(mangoGroup, prices), '\n')
 
-      for (let i = 0; i < ma.openOrders.length; i++) {
-        console.log(ma.openOrders[i].toBase58(), ma.openOrdersAccounts[i]?.quoteTokenTotal)
-      }
 
       // handle undercoll case separately
       if (collRatio < 1) {
