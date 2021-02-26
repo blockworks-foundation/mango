@@ -8,7 +8,7 @@ import { Market, OpenOrders } from '@project-serum/serum';
 import { NUM_MARKETS } from '@mango/client/lib/layout';
 import { getUnixTs, sleep } from './utils';
 import { getFilteredProgramAccounts } from '@mango/client/lib/utils';
-
+import { homedir } from 'os'
 
 // async function getAllMarginAccounts(
 //   connection: Connection,
@@ -57,7 +57,7 @@ async function runLiquidator() {
   const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
 
   // liquidator's keypair
-  const keyPairPath = '/home/dd/.config/solana/id.json'
+  const keyPairPath = homedir() + '/.config/solana/id.json'
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
   // TODO fetch these automatically
