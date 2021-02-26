@@ -45,6 +45,7 @@ import { homedir } from 'os'
 async function runLiquidator() {
   const client = new MangoClient()
   const cluster = 'devnet'
+  const group_name = 'BTC_ETH_USDT'
   const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
 
   // The address of the Mango Program on the blockchain
@@ -54,7 +55,7 @@ async function runLiquidator() {
   const dexProgramId = new PublicKey(IDS[cluster].dex_program_id)
 
   // Address of the MangoGroup
-  const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
+  const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups[group_name].mango_group_pk)
 
   // liquidator's keypair
   const keyPairPath = homedir() + '/.config/solana/id.json'
@@ -79,7 +80,6 @@ async function runLiquidator() {
 
   while (true) {
     mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
-    console.log(mangoGroup.srmVault.toBase58())
     const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroup)
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
 
