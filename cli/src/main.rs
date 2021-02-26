@@ -289,11 +289,13 @@ pub fn start(opts: Opts) -> Result<()> {
             let spot_markets = &cluster_ids["spot_markets"];
             let oracles = &cluster_ids["oracles"];
             let quote_symbol = &tokens[tokens.len() - 1].as_str();
+            let mut spot_market_symbols: HashMap<String, String> = HashMap::new();
             for i in 0..(tokens.len() - 1) {
                 let base_symbol = &tokens[i].as_str();
                 let market_symbol = format!("{}/{}", base_symbol, quote_symbol);
                 spot_market_pks.push(get_symbol_pk(spot_markets, market_symbol.as_str()));
                 oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
+                spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().unwrap().to_string());
             }
 
             let mut borr_lims = [0u64; NUM_TOKENS];
@@ -302,7 +304,6 @@ pub fn start(opts: Opts) -> Result<()> {
                 let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
                 borr_lims[i] = spl_token::ui_amount_to_amount(borrow_limits[i], mint.decimals);
             }
-
             // Send out instruction
             let instruction = init_mango_group(
                 &mango_program_id,
@@ -337,7 +338,9 @@ pub fn start(opts: Opts) -> Result<()> {
                 "mint_pks": mint_pk_strs,
                 "spot_market_pks": spot_market_pk_strs,
                 "oracle_pks": oracle_pk_strs,
-                "symbols": symbol_pks
+                "symbols": symbol_pks,
+                "srm_vault_pk": srm_vault_pk.to_string(),
+                "spot_market_symbols": spot_market_symbols
             });
 
             let ids = ids.as_object_mut().unwrap();

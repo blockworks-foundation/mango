@@ -76,15 +76,13 @@ async function runLiquidator() {
   const sleepTime = 10000
   // TODO handle failures in any of the steps
   // Find a way to get all margin accounts without querying fresh--get incremental updates to margin accounts
+
   while (true) {
     mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
     console.log(mangoGroup.srmVault.toBase58())
-    const t0 = getUnixTs()
     const marginAccounts = await client.getAllMarginAccounts(connection, programId, mangoGroup)
-    const t1 = getUnixTs()
-    console.log('time', t1 - t0, marginAccounts.length)
-
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
+
     console.log(prices)
     for (let ma of marginAccounts) {  // parallelize this if possible
       const assetsVal = ma.getAssetsVal(mangoGroup, prices)

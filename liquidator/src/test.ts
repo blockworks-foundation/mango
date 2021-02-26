@@ -161,4 +161,44 @@ async function testServer() {
   console.log(accounts.length, t1 - t0, accounts.length * AccountLayout.span)
 }
 
-testServer()
+
+async function testAll() {
+  const client = new MangoClient()
+  const cluster = 'devnet'
+  const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
+  const programId = new PublicKey(IDS[cluster].mango_program_id)
+  const dexProgramId = new PublicKey(IDS[cluster].dex_program_id)
+  const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups.BTC_ETH_USDC.mango_group_pk)
+  const keyPairPath = '/home/dd/.config/solana/id2.json'
+  const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
+  const mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+
+
+  /**
+   * Verify that balances in the vault matches total deposits + amount in all the open orders
+   */
+  async function testVaultBalances() {
+    return 0
+  }
+
+  /**
+   * Test what happens when you try to withdraw what's in your deposits, but some of your coins are still borrowed
+   */
+  async function testWithdrawExcess() {
+    return 0
+  }
+
+
+
+  async function testGetOpenOrdersLatency() {
+    const t0 = getUnixTs()
+    const accounts = await client.getMarginAccountsForOwner(connection, programId, mangoGroup, payer)
+    const t1 = getUnixTs()
+    console.log(t1 - t0, accounts.length)
+  }
+
+  await testGetOpenOrdersLatency()
+}
+
+testAll()
+// testServer()

@@ -513,10 +513,11 @@
 
 "@mango/client@git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git":
   version "0.1.0"
-  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#db4ae6f66622223810c256e81614c2c9c5dfa884"
+  resolved "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#8f51b00efb72758252b6b2e21fddec8ff6e58443"
   dependencies:
     "@project-serum/serum" "^0.13.20"
     "@project-serum/sol-wallet-adapter" "^0.1.4"
+    "@solana/spl-token" "0.0.13"
     "@solana/web3.js" "^0.90.0"
     bn.js "^5.1.2"
     borsh "https://github.com/defactojob/borsh-js#field-mapper"

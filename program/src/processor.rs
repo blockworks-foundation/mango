@@ -139,6 +139,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn init_margin_account(
         program_id: &Pubkey,
         accounts: &[AccountInfo]
@@ -375,9 +376,11 @@ impl Processor {
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
 
-        settle_borrow_unchecked(&mut mango_group, &mut margin_account, token_index, quantity)
+        settle_borrow_unchecked(&mut mango_group, &mut margin_account, token_index, quantity)?;
+        Ok(())
     }
 
+    #[inline(never)]
     fn liquidate(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -587,6 +590,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn change_borrow_limit(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -951,43 +955,42 @@ impl Processor {
         accounts: &[AccountInfo],
         data: &[u8]
     ) -> MangoResult<()> {
-        msg!("Mango Processor");
         let instruction = MangoInstruction::unpack(data).ok_or(ProgramError::InvalidInstructionData)?;
         match instruction {
             MangoInstruction::InitMangoGroup {
                 signer_nonce, maint_coll_ratio, init_coll_ratio, borrow_limits
             } => {
-                msg!("InitMangoGroup");
+                msg!("Mango: InitMangoGroup");
                 Self::init_mango_group(program_id, accounts, signer_nonce, maint_coll_ratio, init_coll_ratio, borrow_limits)?;
             }
             MangoInstruction::InitMarginAccount => {
-                msg!("InitMarginAccount");
+                msg!("Mango: InitMarginAccount");
                 Self::init_margin_account(program_id, accounts)?;
             }
             MangoInstruction::Deposit {
                 quantity
             } => {
-                msg!("Deposit");
+                msg!("Mango: Deposit");
                 Self::deposit(program_id, accounts, quantity)?;
             }
             MangoInstruction::Withdraw {
                 quantity
             } => {
-                msg!("Withdraw");
+                msg!("Mango: Withdraw");
                 Self::withdraw(program_id, accounts, quantity)?;
             }
             MangoInstruction::Borrow {
                 token_index,
                 quantity
             } => {
-                msg!("Borrow");
+                msg!("Mango: Borrow");
                 Self::borrow(program_id, accounts, token_index, quantity)?;
             }
             MangoInstruction::SettleBorrow {
                 token_index,
                 quantity
             } => {
-                msg!("SettleBorrow");
+                msg!("Mango: SettleBorrow");
                 Self::settle_borrow(program_id, accounts, token_index, quantity)?;
             }
             MangoInstruction::Liquidate {
@@ -995,49 +998,49 @@ impl Processor {
             } => {
                 // Either user takes the position
                 // Or the program can liquidate on the serum dex (in case no liquidator wants to take pos)
-                msg!("Liquidate");
+                msg!("Mango: Liquidate");
                 Self::liquidate(program_id, accounts, deposit_quantities)?;
             }
             MangoInstruction::DepositSrm {
                 quantity
             } => {
-                msg!("DepositSrm");
+                msg!("Mango: DepositSrm");
                 Self::deposit_srm(program_id, accounts, quantity)?;
             }
             MangoInstruction::WithdrawSrm {
                 quantity
             } => {
-                msg!("WithdrawSrm");
+                msg!("Mango: WithdrawSrm");
                 Self::withdraw_srm(program_id, accounts, quantity)?;
             }
             MangoInstruction::PlaceOrder {
                 order
             } => {
-                msg!("PlaceOrder");
+                msg!("Mango: PlaceOrder");
                 Self::place_order(program_id, accounts, order)?;
             }
             MangoInstruction::SettleFunds => {
-                msg!("SettleFunds");
+                msg!("Mango: SettleFunds");
                 Self::settle_funds(program_id, accounts)?;
             }
             MangoInstruction::CancelOrder {
                 order
             } => {
-                msg!("CancelOrder");
+                msg!("Mango: CancelOrder");
                 let data =  serum_dex::instruction::MarketInstruction::CancelOrderV2(order).pack();
                 Self::cancel_order(program_id, accounts, data)?;
             }
             MangoInstruction::CancelOrderByClientId {
                 client_id
             } => {
-                msg!("CancelOrderByClientId");
+                msg!("Mango: CancelOrderByClientId");
                 Self::cancel_order(program_id, accounts, client_id.to_le_bytes().to_vec())?;
             }
 
             MangoInstruction::ChangeBorrowLimit {
                 token_index, borrow_limit
             } => {
-                msg!("ChangeBorrowLimit");
+                msg!("Mango: ChangeBorrowLimit");
                 Self::change_borrow_limit(program_id, accounts, token_index, borrow_limit)?;
             }
         }
