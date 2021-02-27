@@ -266,10 +266,17 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     //
     // )?)
 
-    let txid = client.send_transaction(txn)?;
+    let txid = client.send_transaction_with_config(txn, RpcSendTransactionConfig {
+        skip_preflight: true,
+        ..RpcSendTransactionConfig::default()
+    })?;
+
     for i in 0..9 {
         thread::sleep(time::Duration::from_millis(500));
-        client.send_transaction(txn)?;
+        client.send_transaction_with_config(txn, RpcSendTransactionConfig {
+            skip_preflight: true,
+            ..RpcSendTransactionConfig::default()
+        })?;
     }
     println!("Confirming txid: {}", txid.to_string());
     client.confirm_transaction(&txid)?;
