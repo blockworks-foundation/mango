@@ -35,7 +35,7 @@ impl FromStr for Cluster {
     fn from_str(s: &str) -> Result<Cluster> {
         match s.to_lowercase().as_str() {
             "t" | "testnet" => Ok(Cluster::Testnet),
-            "m" | "mainnet" => Ok(Cluster::Mainnet),
+            "m" | "mainnet" | "mainnet-beta" => Ok(Cluster::Mainnet),
             "v" | "vipmainnet" => Ok(Cluster::VipMainnet),
             "d" | "devnet" => Ok(Cluster::Devnet),
             "l" | "localnet" => Ok(Cluster::Localnet),
@@ -58,7 +58,7 @@ impl Cluster {
         match self {
             Cluster::Devnet => "https://devnet.solana.com",
             Cluster::Testnet => "https://testnet.solana.com",
-            Cluster::Mainnet => "https://solana-api.projectserum.com",
+            Cluster::Mainnet => "https://api.mainnet-beta.solana.com",
             Cluster::VipMainnet => "https://vip-api.mainnet-beta.solana.com",
             Cluster::Localnet => "http://127.0.0.1:8899",
             Cluster::Debug => "http://34.90.18.145:8899",
@@ -68,7 +68,7 @@ impl Cluster {
         match self {
             Cluster::Devnet => "devnet",
             Cluster::Testnet => "testnet",
-            Cluster::Mainnet => "mainnet",
+            Cluster::Mainnet => "mainnet-beta",
             Cluster::VipMainnet => "vipmainnet",
             Cluster::Localnet => "localnet",
             Cluster::Debug => "debug",
@@ -120,7 +120,7 @@ pub fn create_account_rent_exempt(
         &signers,
         recent_hash,
     );
-
+    println!("{}", account.pubkey().to_string());
     send_txn(client, &txn, false)?;
     Ok(account)
 }
