@@ -19,6 +19,7 @@ use spl_token::solana_program::instruction::Instruction;
 use spl_token::solana_program::program_pack::IsInitialized;
 use bip39::{Mnemonic, Seed, Language};
 use tiny_hderive::bip32::ExtendedPrivKey;
+use std::{thread, time};
 
 #[derive(Clone, Debug)]
 pub enum Cluster {
@@ -264,19 +265,24 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     //     }
     //
     // )?)
+
     let txid = client.send_transaction(txn)?;
-    let txid2 = client.send_transaction(txn)?;
+    for i in 0..9 {
+        thread::sleep(time::Duration::from_millis(500));
+        client.send_transaction(txn)?;
+    }
+    println!("Confirming txid: {}", txid.to_string());
+    client.confirm_transaction(&txid)?;
+    Ok(txid)
 
-    println!("{} {}", txid.to_string(), txid2.to_string());
-
-    Ok(client.send_and_confirm_transaction_with_spinner_and_config(
-        txn,
-        CommitmentConfig::confirmed(),
-        RpcSendTransactionConfig {
-            skip_preflight: true,
-            ..RpcSendTransactionConfig::default()
-        },
-    )?)
+    // Ok(client.send_and_confirm_transaction_with_spinner_and_config(
+    //     txn,
+    //     CommitmentConfig::confirmed(),
+    //     RpcSendTransactionConfig {
+    //         skip_preflight: true,
+    //         ..RpcSendTransactionConfig::default()
+    //     },
+    // )?)
 }
 
 pub fn simulate_transaction(
