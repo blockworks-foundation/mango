@@ -267,6 +267,7 @@ pub fn start(opts: Opts) -> Result<()> {
                 &mango_program_id
             )?;
 
+            let mango_group_pk = mango_group_kp.pubkey();
             // let mango_group_pk = create_account_rent_exempt(
             //     &client, &payer, size_of::<MangoGroup>(), &mango_program_id
             // )?.pubkey();
