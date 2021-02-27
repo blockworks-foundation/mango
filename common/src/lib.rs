@@ -264,6 +264,10 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     //     }
     //
     // )?)
+    let txid = client.send_transaction(txn)?;
+    let txid2 = client.send_transaction(txn)?;
+
+    println!("{} {}", txid.to_string(), txid2.to_string());
 
     Ok(client.send_and_confirm_transaction_with_spinner_and_config(
         txn,

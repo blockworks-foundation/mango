@@ -227,9 +227,6 @@ impl MangoGroupIds {
 }
 
 
-
-
-
 pub fn start(opts: Opts) -> Result<()> {
     let client = opts.client();
 
@@ -255,8 +252,6 @@ pub fn start(opts: Opts) -> Result<()> {
             };
 
             let dex_program_id = cluster_ids["dex_program_id"].as_str().unwrap();
-
-
 
             let mango_group_kp = Keypair::new();
             let create_mango_group_acc = create_account_instr(
