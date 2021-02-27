@@ -58,7 +58,7 @@ impl Cluster {
         match self {
             Cluster::Devnet => "https://devnet.solana.com",
             Cluster::Testnet => "https://testnet.solana.com",
-            Cluster::Mainnet => "http://api.stakeconomy.com:8899/",
+            Cluster::Mainnet => "https://api.stakeconomy.com",
             // Cluster::Mainnet => "https://api.mainnet-beta.solana.com",
             Cluster::VipMainnet => "https://vip-api.mainnet-beta.solana.com",
             Cluster::Localnet => "http://127.0.0.1:8899",
