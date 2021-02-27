@@ -1,7 +1,15 @@
 // TODO make sure funds in liquidatable account can actually be withdrawn
 //    -- can't be withdrawn if total deposits == total_borrows
 
-import { IDS, MangoClient, MangoGroup, MarginAccount, MarginAccountLayout, NUM_TOKENS } from '@mango/client';
+import {
+  getMultipleAccounts,
+  IDS,
+  MangoClient,
+  MangoGroup,
+  MarginAccount,
+  MarginAccountLayout, nativeToUi,
+  NUM_TOKENS, parseTokenAccountData,
+} from '@mango/client';
 import { Account, Connection, LAMPORTS_PER_SOL, PublicKey, TransactionSignature } from '@solana/web3.js';
 import fs from 'fs';
 import { Market, OpenOrders } from '@project-serum/serum';
@@ -84,6 +92,13 @@ async function runLiquidator() {
     const prices = await mangoGroup.getPrices(connection)  // TODO put this on websocket as well
 
     console.log(prices)
+
+    const tokenAccs = await getMultipleAccounts(connection, mangoGroup.vaults)
+    const vaultValues = tokenAccs.map(
+      (a, i) => nativeToUi(parseTokenAccountData(a.accountInfo.data).amount, mangoGroup.mintDecimals[i])
+    )
+    console.log(vaultValues)
+
     for (let ma of marginAccounts) {  // parallelize this if possible
       const assetsVal = ma.getAssetsVal(mangoGroup, prices)
       const liabsVal = ma.getLiabsVal(mangoGroup, prices)
@@ -170,13 +185,10 @@ async function runLiquidator() {
       ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
 
       console.log('Liquidation process complete\n', ma.toPrettyString(mangoGroup, prices))
-
-      console.log('withdrawing USDC')
     }
 
     await sleep(sleepTime)
   }
-
 }
 
 runLiquidator()

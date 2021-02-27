@@ -58,7 +58,7 @@ impl Cluster {
         match self {
             Cluster::Devnet => "https://devnet.solana.com",
             Cluster::Testnet => "https://testnet.solana.com",
-            Cluster::Mainnet => "https://api.mainnet-beta.solana.com",
+            Cluster::Mainnet => "https://solana-api.projectserum.com",
             Cluster::VipMainnet => "https://vip-api.mainnet-beta.solana.com",
             Cluster::Localnet => "http://127.0.0.1:8899",
             Cluster::Debug => "http://34.90.18.145:8899",
@@ -255,6 +255,16 @@ pub fn mint_to_new_account(
 }
 
 pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Result<Signature> {
+    // Ok(client.send_transaction_with_config(
+    //     txn,
+    //     RpcSendTransactionConfig {
+    //         skip_preflight: true,
+    //         preflight_commitment: None,
+    //         encoding: None
+    //     }
+    //
+    // )?)
+
     Ok(client.send_and_confirm_transaction_with_spinner_and_config(
         txn,
         CommitmentConfig::confirmed(),

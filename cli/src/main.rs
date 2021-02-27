@@ -243,7 +243,6 @@ pub fn start(opts: Opts) -> Result<()> {
             let mut ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
             let cluster_name = opts.cluster.name();
             let cluster_ids = &ids[cluster_name];
-
             let mango_program_id = if let Some(pk_str) = mango_program_id {
                 Pubkey::from_str(pk_str.as_str())?
             } else {
@@ -259,6 +258,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let (signer_key, signer_nonce) = create_signer_key_and_nonce(&mango_program_id, &mango_group_pk);
             let dex_program_id = Pubkey::from_str(dex_program_id)?;
             assert!(tokens.len() <= NUM_TOKENS && tokens.len() >= 2);
+            println!("here");
 
             let symbols = &cluster_ids["symbols"];
             let mint_pks: Vec<Pubkey> = tokens.iter().map(
@@ -277,6 +277,7 @@ pub fn start(opts: Opts) -> Result<()> {
                 )?.pubkey();
                 vault_pks.push(vault_pk);
             }
+            println!("here");
 
             let srm_mint_pk = get_symbol_pk(symbols, "SRM");
             let srm_vault_pk = create_token_account(
@@ -324,6 +325,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let instructions = vec![instruction];
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
+            println!("here");
 
             // Edit the json file and add the keys associated with this mango group
             let group_name: String = tokens.join("_");
