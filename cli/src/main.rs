@@ -154,7 +154,7 @@ pub enum Command {
 impl Opts {
     fn client(&self) -> RpcClient {
         RpcClient::new_with_commitment(self.cluster.url().to_string(),
-                                       CommitmentConfig::confirmed())
+                                       CommitmentConfig::processed())
     }
 }
 
@@ -278,7 +278,7 @@ pub fn start(opts: Opts) -> Result<()> {
             // Create vaults owned by mango program id
             let mut vault_pks = vec![];
             for i in 0..mint_pks.len() {
-                println!("Creating vault account");
+                println!("Creating vault for: {}", &tokens[i]);
                 let vault_pk = create_token_account(
                     &client, &mint_pks[i], &signer_key, &payer
                 )?.pubkey();
@@ -286,10 +286,12 @@ pub fn start(opts: Opts) -> Result<()> {
             }
 
             let srm_mint_pk = get_symbol_pk(symbols, "SRM");
+            println!("Creating vault for: SRM");
             let srm_vault_pk = create_token_account(
                 &client, &srm_mint_pk, &signer_key, &payer
             )?.pubkey();
 
+            println!("set up spot markets");
             // Find corresponding spot markets
             let mut spot_market_pks = vec![];
             let mut oracle_pks = vec![];
@@ -298,19 +300,21 @@ pub fn start(opts: Opts) -> Result<()> {
             let quote_symbol = &tokens[tokens.len() - 1].as_str();
             let mut spot_market_symbols: HashMap<String, String> = HashMap::new();
             for i in 0..(tokens.len() - 1) {
-                let base_symbol = &tokens[i].as_str();
+                let base_symbol = tokens[i].as_str();
                 let market_symbol = format!("{}/{}", base_symbol, quote_symbol);
                 spot_market_pks.push(get_symbol_pk(spot_markets, market_symbol.as_str()));
                 oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
                 spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().unwrap().to_string());
             }
 
+            println!("borrow limits");
             let mut borr_lims = [0u64; NUM_TOKENS];
             for i in 0..NUM_TOKENS {
                 let mint_acc = client.get_account(&mint_pks[i])?;
                 let mint = spl_token::state::Mint::unpack(mint_acc.data.as_slice())?;
                 borr_lims[i] = spl_token::ui_amount_to_amount(borrow_limits[i], mint.decimals);
             }
+
             // Send out instruction
             let instruction = init_mango_group(
                 &mango_program_id,

@@ -188,8 +188,6 @@ async function testAll() {
     return 0
   }
 
-
-
   async function testGetOpenOrdersLatency() {
     const t0 = getUnixTs()
     const accounts = await client.getMarginAccountsForOwner(connection, programId, mangoGroup, payer)
@@ -200,5 +198,5 @@ async function testAll() {
   await testGetOpenOrdersLatency()
 }
 
-testAll()
-// testServer()
+// testAll()
+testServer()

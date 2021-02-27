@@ -267,7 +267,7 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
 
     Ok(client.send_and_confirm_transaction_with_spinner_and_config(
         txn,
-        CommitmentConfig::confirmed(),
+        CommitmentConfig::finalized(),
         RpcSendTransactionConfig {
             skip_preflight: true,
             ..RpcSendTransactionConfig::default()
