@@ -9,52 +9,23 @@ import {
   MarginAccount,
   MarginAccountLayout, nativeToUi,
   NUM_TOKENS, parseTokenAccountData,
+  findLargestTokenAccountForOwner,
 } from '@mango/client';
 import { Account, Connection, LAMPORTS_PER_SOL, PublicKey, TransactionSignature } from '@solana/web3.js';
 import fs from 'fs';
 import { Market, OpenOrders } from '@project-serum/serum';
 import { NUM_MARKETS } from '@mango/client/lib/layout';
 import { getUnixTs, sleep } from './utils';
-import { getFilteredProgramAccounts } from '@mango/client/lib/utils';
 import { homedir } from 'os'
-
-// async function getAllMarginAccounts(
-//   connection: Connection,
-//   programId: PublicKey,
-//   mangoGroup: MangoGroup
-// ): Promise<MarginAccount[]> {
-//
-//   const filters = [
-//     {
-//       memcmp: {
-//         offset: MarginAccountLayout.offsetOf('mangoGroup'),
-//         bytes: mangoGroup.publicKey.toBase58(),
-//       },
-//     },
-//
-//     {
-//       dataSize: MarginAccountLayout.span,
-//     },
-//   ];
-//
-//   const accounts = await getFilteredProgramAccounts(connection, programId, filters);
-//
-//   const marginAccounts = accounts.map(
-//     ({ publicKey, accountInfo }) =>
-//       new MarginAccount(publicKey, MarginAccountLayout.decode(accountInfo == null ? undefined : accountInfo.data))
-//   )
-//
-//   await Promise.all(marginAccounts.map((ma) => ma.loadOpenOrders(connection, mangoGroup.dexProgramId)))
-//
-//   return marginAccounts
-// }
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 
 async function runLiquidator() {
   const client = new MangoClient()
-  const cluster = 'devnet'
+  const cluster = 'mainnet-beta'
   const group_name = 'BTC_ETH_USDT'
-  const connection = new Connection(IDS.cluster_urls[cluster], 'singleGossip')
+  const clusterUrl = process.env.CLUSTER_URL || IDS.cluster_urls[cluster]
+  const connection = new Connection(clusterUrl, 'singleGossip')
 
   // The address of the Mango Program on the blockchain
   const programId = new PublicKey(IDS[cluster].mango_program_id)
@@ -66,17 +37,17 @@ async function runLiquidator() {
   const mangoGroupPk = new PublicKey(IDS[cluster].mango_groups[group_name].mango_group_pk)
 
   // liquidator's keypair
-  const keyPairPath = homedir() + '/.config/solana/id.json'
+  const keyPairPath = process.env.KEYPAIR || homedir() + '/.config/solana/id.json'
   const payer = new Account(JSON.parse(fs.readFileSync(keyPairPath, 'utf-8')))
 
-  // TODO fetch these automatically
-  const tokenWallets = [
-    new PublicKey("HLoPtihB8oETm1kkTpx17FEnXm7afQdS4hojTNvbg3Rg"),
-    new PublicKey("8ASVNBAo94RnJCABYybnkJnXGpBHan2svW3pRsKdbn7s"),
-    new PublicKey("Fy2bjbGpUfXK7jwsNwsnFvXkJfLVUzbWNqFwzMQ9vDFC")
-  ]
-
   let mangoGroup = await client.getMangoGroup(connection, mangoGroupPk)
+  const tokenWallets = (await Promise.all(
+    mangoGroup.tokens.map(
+      (mint) => findLargestTokenAccountForOwner(connection, payer.publicKey, mint).then(
+        (response) => response.publicKey
+      )
+    )
+  ))
 
   // load all markets
   const markets = await Promise.all(mangoGroup.spotMarkets.map(
@@ -124,7 +95,8 @@ async function runLiquidator() {
       }
 
       // determine how much to deposit to get the account above init coll ratio
-      await client.liquidate(connection, programId, mangoGroup, ma, payer, tokenWallets, [0, 0, deficit * 1.01])
+      await client.liquidate(connection, programId, mangoGroup, ma, payer,
+        tokenWallets, [0, 0, deficit * 1.01])
       ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
 
       console.log('liquidation success')
