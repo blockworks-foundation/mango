@@ -45,6 +45,7 @@ macro_rules! throw {
 
 pub trait Loadable: Pod {
     fn load_mut<'a>(account: &'a AccountInfo) -> Result<RefMut<'a, Self>, ProgramError> {
+        // TODO verify if this checks for size
         Ok(RefMut::map(account.try_borrow_mut_data()?, |data| from_bytes_mut(data)))
     }
     fn load<'a>(account: &'a AccountInfo) -> Result<Ref<'a, Self>, ProgramError> {
@@ -71,6 +72,7 @@ pub enum AccountFlag {
     Initialized = 1u64 << 0,
     MangoGroup = 1u64 << 1,
     MarginAccount = 1u64 << 2,
+    MangoSrmAccount = 1u64 << 3
 }
 
 
@@ -260,20 +262,17 @@ pub struct MarginAccount {
 
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
 
-    // The SRM contributed to the pool by this user
-    // These SRM are not at risk and have no effect on any margin calculations.
-    // Depositing srm is a strictly altruistic act with no upside and no downside
-    pub srm_balance: u64,
-
     // TODO add has_borrows field for easy memcmp fetching
 }
 impl_loadable!(MarginAccount);
 
 impl MarginAccount {
     pub fn load_mut_checked<'a>(
+        program_id: &Pubkey,
         account: &'a AccountInfo,
         mango_group_pk: &Pubkey
     ) -> MangoResult<RefMut<'a, Self>> {
+        prog_assert_eq!(account.owner, program_id)?;  // this is probably not necessary
         prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
 
         let margin_account = Self::load_mut(account)?;
@@ -284,9 +283,11 @@ impl MarginAccount {
         Ok(margin_account)
     }
     pub fn load_checked<'a>(
+        program_id: &Pubkey,
         account: &'a AccountInfo,
         mango_group_pk: &Pubkey
     ) -> MangoResult<Ref<'a, Self>> {
+        prog_assert_eq!(account.owner, program_id)?;  // This is probably not necessary
         prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
 
         let margin_account = Self::load(account)?;
@@ -442,6 +443,37 @@ impl MarginAccount {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
 }
+
+// The SRM contributed to the pool by this user
+// These SRM are not at risk and have no effect on any margin calculations.
+// Depositing srm is a strictly altruistic act with no upside and no downside
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct MangoSrmAccount {
+    pub account_flags: u64,
+    pub mango_group: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64
+}
+impl_loadable!(MangoSrmAccount);
+
+impl MangoSrmAccount {
+    pub fn load_mut_checked<'a>(
+        program_id: &Pubkey,
+        account: &'a AccountInfo,
+        mango_group_pk: &Pubkey
+    ) -> MangoResult<RefMut<'a, Self>> {
+        prog_assert_eq!(account.owner, program_id)?;
+        prog_assert_eq!(account.data_len(), size_of::<MangoSrmAccount>())?;
+        let srm_account = Self::load_mut(account)?;
+        prog_assert_eq!(srm_account.account_flags, (AccountFlag::Initialized | AccountFlag::MangoSrmAccount).bits())?;
+        prog_assert_eq!(&srm_account.mango_group, mango_group_pk)?;
+
+        Ok(srm_account)
+    }
+}
+
+
 
 #[derive(Copy, Clone)]
 #[repr(packed)]
