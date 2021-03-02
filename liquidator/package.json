@@ -31,7 +31,7 @@
     "typescript": "^4.0.5"
   },
   "dependencies": {
-    "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git#send_tx",
+    "@mango/client": "git+ssh://git@github.com:blockworks-foundation/mango-client-ts.git",
     "@project-serum/serum": "^0.13.20",
     "@solana/spl-token": "0.0.13",
     "@solana/web3.js": "^0.90.0",
