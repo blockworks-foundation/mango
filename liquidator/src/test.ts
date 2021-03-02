@@ -1,16 +1,24 @@
-import { IDS, MangoClient, MangoGroup, MarginAccount, MarginAccountLayout } from '@mango/client';
+import {
+  findLargestTokenAccountForOwner,
+  IDS,
+  MangoClient,
+  MangoGroup,
+  MarginAccount,
+  MarginAccountLayout,
+  NUM_TOKENS,
+} from '@mango/client';
 import {
   Account,
   Connection, LAMPORTS_PER_SOL,
   PublicKey,
   SYSVAR_RENT_PUBKEY,
   Transaction,
-  TransactionInstruction,
+  TransactionInstruction, TransactionSignature,
 } from '@solana/web3.js';
 import fs from 'fs';
 import { getUnixTs, sleep } from './utils';
 import { createAccountInstruction, getFilteredProgramAccounts } from '@mango/client/lib/utils';
-import { encodeMangoInstruction } from '@mango/client/lib/layout';
+import { encodeMangoInstruction, NUM_MARKETS } from '@mango/client/lib/layout';
 import { Token, MintLayout, AccountLayout, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { homedir } from 'os';
 import { Market } from '@project-serum/serum';
@@ -163,6 +171,78 @@ async function testServer() {
   console.log(accounts.length, t1 - t0, accounts.length * AccountLayout.span)
 }
 
+async function drainAccount(
+  client: MangoClient,
+  connection: Connection,
+  programId: PublicKey,
+  mangoGroup: MangoGroup,
+  ma: MarginAccount,
+  markets: Market[],
+  payer: Account,
+  prices: number[],
+  usdWallet: PublicKey
+) {
+  // Cancel all open orders
+  const bidsPromises = markets.map((market) => market.loadBids(connection))
+  const asksPromises = markets.map((market) => market.loadAsks(connection))
+  const books = await Promise.all(bidsPromises.concat(asksPromises))
+  const bids = books.slice(0, books.length / 2)
+  const asks = books.slice(books.length / 2, books.length)
+
+  const cancelProms: Promise<TransactionSignature[]>[] = []
+  for (let i = 0; i < NUM_MARKETS; i++) {
+    cancelProms.push(ma.cancelAllOrdersByMarket(connection, client, programId, mangoGroup, markets[i], bids[i], asks[i], payer))
+  }
+
+  await Promise.all(cancelProms)
+  console.log('all orders cancelled')
+
+  console.log()
+  await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
+  console.log('settleAll complete')
+  ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
+
+  // sort non-quote currency assets by value
+  const assets = ma.getAssets(mangoGroup)
+  const liabs = ma.getLiabs(mangoGroup)
+
+  const netValues: [number, number][] = []
+
+  for (let i = 0; i < NUM_TOKENS - 1; i++) {
+    netValues.push([i, (assets[i] - liabs[i]) * prices[i]])
+  }
+  netValues.sort((a, b) => (b[1] - a[1]))
+
+  for (let i = 0; i < NUM_TOKENS - 1; i++) {
+    const marketIndex = netValues[i][0]
+    const market = markets[marketIndex]
+
+    if (netValues[i][1] > 0) { // sell to close
+      const price = prices[marketIndex] * 0.95
+      const size = assets[marketIndex]
+      console.log(`Sell to close ${marketIndex} ${size}`)
+      await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'sell', price, size, 'limit')
+
+    } else if (netValues[i][1] < 0) { // buy to close
+      const price = prices[marketIndex] * 1.05  // buy at up to 5% higher than oracle price
+      const size = liabs[marketIndex]
+      console.log(mangoGroup.getUiTotalDeposit(NUM_MARKETS), mangoGroup.getUiTotalBorrow(NUM_MARKETS))
+      console.log(ma.getUiDeposit(mangoGroup, NUM_MARKETS), ma.getUiBorrow(mangoGroup, NUM_MARKETS))
+      console.log(`Buy to close ${marketIndex} ${size}`)
+      await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'buy', price, size, 'limit')
+    }
+  }
+
+  await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
+  console.log('settleAll complete')
+  ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
+  console.log('Liquidation process complete\n', ma.toPrettyString(mangoGroup, prices))
+
+  console.log('Withdrawing USD')
+  await client.withdraw(connection, programId, mangoGroup, ma, payer, mangoGroup.tokens[NUM_TOKENS-1], usdWallet, ma.getUiDeposit(mangoGroup, NUM_TOKENS-1) * 0.999)
+
+}
+
 
 async function testAll() {
   const client = new MangoClient()
@@ -224,9 +304,40 @@ async function testAll() {
     console.log(t1 - t0, accounts.length)
   }
 
+  async function testDrainAccount() {
+    const prices = await mangoGroup.getPrices(connection)
+    const tokenWallets = (await Promise.all(
+      mangoGroup.tokens.map(
+        (mint) => findLargestTokenAccountForOwner(connection, payer.publicKey, mint).then(
+          (response) => response.publicKey
+        )
+      )
+    ))
+
+    // load all markets
+    const markets = await Promise.all(mangoGroup.spotMarkets.map(
+      (pk) => Market.load(connection, pk, {skipPreflight: true, commitment: 'singleGossip'}, dexProgramId)
+    ))
+
+    const marginAccountPk = new PublicKey("BrfYHWjU8UaWELfdR73qug1T5bWReg2tNJwUyHbzCgc2")
+    const ma = await client.getMarginAccount(connection, marginAccountPk, mangoGroup.dexProgramId)
+    while (true) {
+      try {
+        await drainAccount(client, connection, programId, mangoGroup, ma, markets, payer, prices, tokenWallets[NUM_TOKENS-1])
+        console.log('complete')
+        break
+      } catch (e) {
+        await sleep(1000)
+      }
+    }
+
+  }
+
   // await testGetOpenOrdersLatency()
-  await testPlaceCancelOrder()
+  // await testPlaceCancelOrder()
+  await testDrainAccount()
 }
+
 
 testAll()
 // testServer()

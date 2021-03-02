@@ -173,7 +173,7 @@ pub enum MangoInstruction {
     },
 
     // Proxy instructions to Dex
-    /// ***Place an order on the Serum Dex using Mango margin facilities
+    /// Place an order on the Serum Dex using Mango margin facilities
     ///
     /// Accounts expected by this instruction (17 + 2 * NUM_MARKETS):
     ///

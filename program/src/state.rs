@@ -443,7 +443,6 @@ impl MarginAccount {
     }
 }
 
-
 #[derive(Copy, Clone)]
 #[repr(packed)]
 pub struct OrderBookStateHeader {
@@ -554,7 +553,6 @@ fn strip_dex_padding_mut<'a>(acc: &'a AccountInfo) -> MangoResult<RefMut<'a, [u8
     });
     Ok(unpadded_data)
 }
-
 
 
 pub fn load_bids_mut<'a>(
