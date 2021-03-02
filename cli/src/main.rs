@@ -7,9 +7,8 @@ use std::str::FromStr;
 use anyhow::Result;
 use arrayref::array_ref;
 use clap::Clap;
-use common::{Cluster, convert_assertion_error, create_account_rent_exempt, create_signer_key_and_nonce, create_token_account, read_keypair_file, send_instructions, create_account_instr};
+use common::{Cluster, convert_assertion_error, create_account_rent_exempt, create_signer_key_and_nonce, create_token_account, read_keypair_file, send_instructions};
 use fixed::types::U64F64;
-use mango::instruction::{borrow, change_borrow_limit, deposit, init_mango_group, init_margin_account, settle_borrow, withdraw};
 use mango::processor::get_prices;
 use mango::state::{Loadable, MangoGroup, MarginAccount, NUM_MARKETS, NUM_TOKENS};
 use serde_json::{json, Value};
@@ -19,8 +18,8 @@ use solana_sdk::account::{Account, create_account_infos};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Signer, Keypair};
-use solana_sdk::instruction::Instruction;
+use solana_sdk::signature::{Signer};
+use mango::instruction::{init_mango_group, init_margin_account, withdraw, borrow, deposit, settle_borrow, change_borrow_limit};
 
 #[derive(Clap, Debug)]
 pub struct Opts {
@@ -253,19 +252,21 @@ pub fn start(opts: Opts) -> Result<()> {
 
             let dex_program_id = cluster_ids["dex_program_id"].as_str().unwrap();
 
-            let mango_group_kp = Keypair::new();
-            let create_mango_group_acc = create_account_instr(
-                &client,
-                &payer,
-                &mango_group_kp,
-                size_of::<MangoGroup>(),
-                &mango_program_id
-            )?;
+            // let mango_group_kp = Keypair::new();
+            // let create_mango_group_acc = create_account_instr(
+            //     &client,
+            //     &payer,
+            //     &mango_group_kp,
+            //     size_of::<MangoGroup>(),
+            //     &mango_program_id
+            // )?;
+            //
+            // let mango_group_pk = mango_group_kp.pubkey();
+            // println!("mango_group_pk: {}", mango_group_pk.to_string());
 
-            let mango_group_pk = mango_group_kp.pubkey();
-            // let mango_group_pk = create_account_rent_exempt(
-            //     &client, &payer, size_of::<MangoGroup>(), &mango_program_id
-            // )?.pubkey();
+            let mango_group_pk = create_account_rent_exempt(
+                &client, &payer, size_of::<MangoGroup>(), &mango_program_id
+            )?.pubkey();
 
 
             let (signer_key, signer_nonce) = create_signer_key_and_nonce(&mango_program_id, &mango_group_pk);
@@ -322,6 +323,7 @@ pub fn start(opts: Opts) -> Result<()> {
             }
 
             // Send out instruction
+
             let instruction = init_mango_group(
                 &mango_program_id,
                 &mango_group_pk,
@@ -338,8 +340,8 @@ pub fn start(opts: Opts) -> Result<()> {
                 U64F64::from_num(1.2),
                 borr_lims
             )?;
-            let instructions = vec![create_mango_group_acc, instruction];
-            let signers = vec![&payer, &mango_group_kp];
+            let instructions = vec![instruction];
+            let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
 
             // Edit the json file and add the keys associated with this mango group

@@ -170,6 +170,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn deposit(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -219,6 +220,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn withdraw(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -490,6 +492,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn deposit_srm(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -538,6 +541,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn withdraw_srm(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -885,6 +889,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn cancel_order(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
