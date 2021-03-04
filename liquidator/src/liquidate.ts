@@ -49,6 +49,7 @@ async function drainAccount(
   console.log()
   await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
   console.log('settleAll complete')
+  await sleep(2000)
   ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
 
   // sort non-quote currency assets by value

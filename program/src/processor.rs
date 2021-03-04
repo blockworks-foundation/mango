@@ -519,9 +519,10 @@ impl Processor {
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
 
         // if MangoSrmAccount is empty, initialize it
+        prog_assert_eq!(mango_srm_account_acc.data_len(), size_of::<MangoSrmAccount>())?;
         let mut mango_srm_account = MangoSrmAccount::load_mut(mango_srm_account_acc)?;
         prog_assert_eq!(mango_srm_account_acc.owner, program_id)?;
-        prog_assert_eq!(mango_srm_account_acc.data_len(), size_of::<MangoSrmAccount>())?;
+
         if mango_srm_account.account_flags == 0 {
             let rent = Rent::from_account_info(rent_acc)?;
             prog_assert!(rent.is_exempt(mango_srm_account_acc.lamports(), size_of::<MangoSrmAccount>()))?;
@@ -554,9 +555,7 @@ impl Processor {
         ];
 
         solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
-
         mango_srm_account.amount = mango_srm_account.amount.checked_add(quantity).unwrap();
-
         Ok(())
     }
 
