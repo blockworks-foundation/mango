@@ -228,7 +228,6 @@ impl MangoGroupIds {
 
 pub fn start(opts: Opts) -> Result<()> {
     let client = opts.client();
-
     match opts.command {
         Command::InitMangoGroup {
             payer,
@@ -343,7 +342,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let instructions = vec![instruction];
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
-
+            println!("InitMangoGroup success");
             // Edit the json file and add the keys associated with this mango group
             let group_name: String = tokens.join("_");
             let vault_pk_strs: Vec<String> = vault_pks.iter().map(|pk| pk.to_string()).collect();
@@ -369,6 +368,7 @@ pub fn start(opts: Opts) -> Result<()> {
             mango_groups.insert(group_name, group_keys);
             let f = File::create(ids_path.as_str()).unwrap();
             serde_json::to_writer_pretty(&f, &ids).unwrap();
+
         }
         Command::InitMarginAccount {
             payer,

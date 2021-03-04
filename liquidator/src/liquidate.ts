@@ -49,6 +49,7 @@ async function drainAccount(
   console.log()
   await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
   console.log('settleAll complete')
+  await sleep(2000)
   ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
 
   // sort non-quote currency assets by value
@@ -94,7 +95,7 @@ async function drainAccount(
 
 async function runLiquidator() {
   const client = new MangoClient()
-  const cluster = 'mainnet-beta'
+  const cluster = process.env.CLUSTER || 'mainnet-beta'
   const group_name = 'BTC_ETH_USDT'
   const clusterUrl = process.env.CLUSTER_URL || IDS.cluster_urls[cluster]
   const connection = new Connection(clusterUrl, 'singleGossip')

@@ -142,15 +142,16 @@ pub enum MangoInstruction {
     /// These SRM are not at risk and are not counted towards collateral or any margin calculations
     /// Depositing SRM is a strictly altruistic act with no upside and no downside
     ///
-    /// Accounts expected by this instruction (7):
+    /// Accounts expected by this instruction (8):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
-    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 1. `[writable]` mango_srm_account_acc - the mango srm account for user
     /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
     /// 3. `[writable]` srm_account_acc - TokenAccount owned by user which will be sending the funds
     /// 4. `[writable]` vault_acc - SRM vault of MangoGroup
     /// 5. `[]` token_prog_acc - acc pointed to by SPL token program id
     /// 6. `[]` clock_acc - Clock sysvar account
+    /// 7. `[]` rent_acc - Rent sysvar account
     DepositSrm {
         quantity: u64
     },
@@ -161,7 +162,7 @@ pub enum MangoInstruction {
     /// Accounts expected by this instruction (8):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
-    /// 1. `[writable]` margin_account_acc - the margin account for this user
+    /// 1. `[writable]` mango_srm_account_acc - the mango srm account for user
     /// 2. `[signer]` owner_acc - Solana account of owner of the margin account
     /// 3. `[writable]` srm_account_acc - TokenAccount owned by user which will be sending the funds
     /// 4. `[writable]` vault_acc - SRM vault of MangoGroup
@@ -691,7 +692,7 @@ pub fn liquidate(
 pub fn deposit_srm(
     program_id: &Pubkey,
     mango_group_pk: &Pubkey,
-    margin_account_pk: &Pubkey,
+    mango_srm_account_pk: &Pubkey,
     owner_pk: &Pubkey,
     srm_account_pk: &Pubkey,
     vault_pk: &Pubkey,
@@ -699,12 +700,13 @@ pub fn deposit_srm(
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
-        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new(*mango_srm_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
         AccountMeta::new(*srm_account_pk, false),
         AccountMeta::new(*vault_pk, false),
         AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
     ];
 
     let instr = MangoInstruction::DepositSrm { quantity };
@@ -719,7 +721,7 @@ pub fn deposit_srm(
 pub fn withdraw_srm(
     program_id: &Pubkey,
     mango_group_pk: &Pubkey,
-    margin_account_pk: &Pubkey,
+    mango_srm_account_pk: &Pubkey,
     owner_pk: &Pubkey,
     srm_account_pk: &Pubkey,
     vault_pk: &Pubkey,
@@ -728,7 +730,7 @@ pub fn withdraw_srm(
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*mango_group_pk, false),
-        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new(*mango_srm_account_pk, false),
         AccountMeta::new_readonly(*owner_pk, true),
         AccountMeta::new(*srm_account_pk, false),
         AccountMeta::new(*vault_pk, false),

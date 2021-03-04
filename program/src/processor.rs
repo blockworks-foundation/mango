@@ -19,7 +19,7 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS};
+use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, MangoSrmAccount};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
 
 macro_rules! prog_assert {
@@ -34,8 +34,6 @@ macro_rules! prog_assert_eq {
 }
 
 pub struct Processor {}
-
-
 
 impl Processor {
     #[inline(never)]
@@ -190,7 +188,8 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key)?;
+            program_id, margin_account_acc, mango_group_acc.key
+        )?;
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -245,9 +244,11 @@ impl Processor {
             clock_acc,
         ] = fixed_accs;
 
-        let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc, program_id
+        )?;
         let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key
+            program_id, margin_account_acc, mango_group_acc.key
         )?;
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -302,6 +303,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn borrow(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -325,7 +327,7 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key
+            program_id, margin_account_acc, mango_group_acc.key
         )?;
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
@@ -354,6 +356,7 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
     fn settle_borrow(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -371,7 +374,7 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key
+            program_id, margin_account_acc, mango_group_acc.key
         )?;
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -413,7 +416,7 @@ impl Processor {
             mango_group_acc, program_id
         )?;
         let mut liqee_margin_account = MarginAccount::load_mut_checked(
-            liqee_margin_account_acc, mango_group_acc.key
+            program_id, liqee_margin_account_acc, mango_group_acc.key
         )?;
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -430,8 +433,18 @@ impl Processor {
         // No liquidations if account above maint collateral ratio
         prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
 
-        // TODO need to SettleFunds or SettleBorrow first to make sure user is still liquidatable
-        // liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
+        // Settle borrows to see if it gets us above maint
+        for i in 0..NUM_TOKENS {
+            let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
+            settle_borrow_unchecked(&mut mango_group, &mut liqee_margin_account, i, native_borrow)?;
+        }
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs)?;
+        if coll_ratio >= mango_group.maint_coll_ratio {  // if account not liquidatable after settle borrow, then return
+            return Ok(())
+        }
+
+        // TODO liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
 
         if coll_ratio < U64F64::from_num(1) {
             let liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
@@ -499,22 +512,39 @@ impl Processor {
         quantity: u64
     ) -> MangoResult<()> {
 
-        const NUM_FIXED: usize = 7;
+        const NUM_FIXED: usize = 8;
         let accounts = array_ref![accounts, 0, NUM_FIXED];
         let [
             mango_group_acc,
-            margin_account_acc,
+            mango_srm_account_acc,
             owner_acc,
             srm_account_acc,
             vault_acc,
             token_prog_acc,
             clock_acc,
+            rent_acc,
         ] = accounts;
         // prog_assert!(owner_acc.is_signer)?; // anyone can deposit, not just owner
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
-        let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key)?;
+
+        // if MangoSrmAccount is empty, initialize it
+        prog_assert_eq!(mango_srm_account_acc.data_len(), size_of::<MangoSrmAccount>())?;
+        let mut mango_srm_account = MangoSrmAccount::load_mut(mango_srm_account_acc)?;
+        prog_assert_eq!(mango_srm_account_acc.owner, program_id)?;
+
+        if mango_srm_account.account_flags == 0 {
+            let rent = Rent::from_account_info(rent_acc)?;
+            prog_assert!(rent.is_exempt(mango_srm_account_acc.lamports(), size_of::<MangoSrmAccount>()))?;
+
+            mango_srm_account.account_flags = (AccountFlag::Initialized | AccountFlag::MangoSrmAccount).bits();
+            mango_srm_account.mango_group = *mango_group_acc.key;
+            prog_assert!(owner_acc.is_signer)?;  // this is not necessary but whatever
+            mango_srm_account.owner = *owner_acc.key;
+        } else {
+            prog_assert_eq!(mango_srm_account.account_flags, (AccountFlag::Initialized | AccountFlag::MangoSrmAccount).bits())?;
+            prog_assert_eq!(&mango_srm_account.mango_group, mango_group_acc.key)?;
+        }
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
@@ -535,9 +565,7 @@ impl Processor {
         ];
 
         solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
-
-        margin_account.srm_balance = margin_account.srm_balance.checked_add(quantity).unwrap();
-
+        mango_srm_account.amount = mango_srm_account.amount.checked_add(quantity).unwrap();
         Ok(())
     }
 
@@ -551,7 +579,7 @@ impl Processor {
         let accounts = array_ref![accounts, 0, NUM_FIXED];
         let [
             mango_group_acc,
-            margin_account_acc,
+            mango_srm_account_acc,
             owner_acc,
             srm_account_acc,
             vault_acc,
@@ -561,15 +589,15 @@ impl Processor {
         ] = accounts;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
-        let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key)?;
+        let mut mango_srm_account = MangoSrmAccount::load_mut_checked(
+            program_id, mango_srm_account_acc, mango_group_acc.key)?;
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
         prog_assert!(owner_acc.is_signer)?;
-        prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
+        prog_assert_eq!(&mango_srm_account.owner, owner_acc.key)?;
         prog_assert_eq!(vault_acc.key, &mango_group.srm_vault)?;
-        prog_assert!(margin_account.srm_balance >= quantity)?;
+        prog_assert!(mango_srm_account.amount >= quantity)?;
         prog_assert_eq!(token_prog_acc.key, &spl_token::id())?;
 
         // Send out withdraw instruction to SPL token program
@@ -589,7 +617,7 @@ impl Processor {
         ];
         let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
         solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
-        margin_account.srm_balance = margin_account.srm_balance.checked_sub(quantity).unwrap();
+        mango_srm_account.amount = mango_srm_account.amount.checked_sub(quantity).unwrap();
 
         Ok(())
     }
@@ -658,11 +686,15 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
-            margin_account_acc, mango_group_acc.key
+            program_id, margin_account_acc, mango_group_acc.key
         )?;
 
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
+
+        let prices = get_prices(&mango_group, oracle_accs)?;
+        let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
+        let reduce_only = coll_ratio < mango_group.init_coll_ratio;
 
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
@@ -751,34 +783,18 @@ impl Processor {
             let spent_deposit = U64F64::from_num(spent) / index.deposit;
             checked_sub_deposit(&mut mango_group, &mut margin_account, token_i, spent_deposit)?;
         } else {
+
             let avail_deposit = margin_account.deposits[token_i];
             checked_sub_deposit(&mut mango_group, &mut margin_account, token_i, avail_deposit)?;
             let rem_spend = U64F64::from_num(spent - native_deposit);
 
+            prog_assert!(!reduce_only)?;  // Cannot borrow more in reduce only mode
             checked_add_borrow(&mut mango_group, &mut margin_account, token_i , rem_spend / index.borrow)?;
             prog_assert!(margin_account.get_native_borrow(&index, token_i) <= mango_group.borrow_limits[token_i])?;
         }
 
-        let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        if coll_ratio < mango_group.init_coll_ratio { // only allow this if it reduces position
-            let assets = margin_account.get_total_assets(&mango_group, open_orders_accs)?;
-            let liabs = margin_account.get_total_liabs(&mango_group)?;
-
-            if token_i == NUM_MARKETS {  // means this is a bid
-                // means we are increasing market_i pos
-                // make sure market_i pos is already net borrowed
-                // strictest req make sure base currency is net borrowed
-                // strictest req make sure quote currency is not net borrowed
-                // TODO see if these reqs can be relaxed
-                prog_assert!(assets[market_i] < liabs[market_i] && assets[NUM_MARKETS] >= liabs[NUM_MARKETS])?;
-
-            } else {  // means this is offer,
-                // strictest req make sure quote currency is net borrowed
-                // strictest req make sure base currency not net borrowed
-                prog_assert!(assets[NUM_MARKETS] < liabs[NUM_MARKETS] && assets[market_i] >= liabs[market_i])?;
-            }
-        }
+        prog_assert!(reduce_only || coll_ratio >= mango_group.init_coll_ratio)?;
 
         prog_assert!(mango_group.has_valid_deposits_borrows(token_i))?;
         Ok(())
@@ -811,6 +827,7 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let mut margin_account = MarginAccount::load_mut_checked(
+            program_id,
             margin_account_acc,
             mango_group_acc.key
         )?;
@@ -914,6 +931,7 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
         let margin_account = MarginAccount::load_checked(
+            program_id,
             margin_account_acc,
             mango_group_acc.key
         )?;

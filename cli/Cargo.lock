@@ -522,7 +522,7 @@ dependencies = [
  "flux-aggregator",
  "mango",
  "serde_json",
- "serum_dex",
+ "serum_dex 0.2.0 (git+https://github.com/project-serum/serum-dex.git?branch=dex-v3)",
  "solana-cli",
  "solana-client",
  "solana-sdk",
@@ -1785,7 +1785,7 @@ dependencies = [
  "num_enum",
  "safe-transmute",
  "serde",
- "serum_dex",
+ "serum_dex 0.2.0 (git+https://github.com/blockworks-foundation/serum-dex.git?branch=dex-v3-devnet)",
  "solana-program",
  "spl-token",
  "static_assertions",
@@ -2936,6 +2936,29 @@ dependencies = [
 name = "serum_dex"
 version = "0.2.0"
 source = "git+https://github.com/project-serum/serum-dex.git?branch=dex-v3#9a3e86a467c4782d9bb0c9760a0fac86883f455b"
+dependencies = [
+ "arrayref",
+ "bincode",
+ "bytemuck",
+ "byteorder",
+ "enumflags2",
+ "field-offset",
+ "itertools",
+ "num-traits",
+ "num_enum",
+ "safe-transmute",
+ "serde",
+ "solana-program",
+ "spl-token",
+ "static_assertions",
+ "thiserror",
+ "without-alloc",
+]
+
+[[package]]
+name = "serum_dex"
+version = "0.2.0"
+source = "git+https://github.com/blockworks-foundation/serum-dex.git?branch=dex-v3-devnet#7759febc2a2f2185625614f6cef27570fa74b7d8"
 dependencies = [
  "arrayref",
  "bincode",
