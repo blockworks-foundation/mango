@@ -144,7 +144,7 @@ async function runLiquidator() {
       )
       console.log(vaultValues)
 
-      for (const ma of marginAccounts) {  // parallelize this if possible
+      for (let ma of marginAccounts) {  // parallelize this if possible
 
         let liquidated = false
         while (true) {
@@ -183,6 +183,7 @@ async function runLiquidator() {
 
           while (true) {
             try {
+              ma = await client.getMarginAccount(connection, ma.publicKey, dexProgramId)
               await drainAccount(client, connection, programId, mangoGroup, ma, markets, payer, prices, tokenWallets[NUM_TOKENS-1])
               console.log('Account drain success')
               break
