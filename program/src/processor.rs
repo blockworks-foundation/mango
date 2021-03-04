@@ -433,8 +433,18 @@ impl Processor {
         // No liquidations if account above maint collateral ratio
         prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
 
-        // TODO need to SettleFunds or SettleBorrow first to make sure user is still liquidatable
-        // liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
+        // Settle borrows to see if it gets us above maint
+        for i in 0..NUM_TOKENS {
+            let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
+            settle_borrow_unchecked(&mut mango_group, &mut liqee_margin_account, i, native_borrow)?;
+        }
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs)?;
+        if coll_ratio >= mango_group.maint_coll_ratio {  // if account not liquidatable after settle borrow, then return
+            return Ok(())
+        }
+
+        // TODO liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
 
         if coll_ratio < U64F64::from_num(1) {
             let liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
@@ -682,6 +692,10 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
+        let prices = get_prices(&mango_group, oracle_accs)?;
+        let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
+        let reduce_only = coll_ratio < mango_group.init_coll_ratio;
+
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
 
@@ -769,34 +783,18 @@ impl Processor {
             let spent_deposit = U64F64::from_num(spent) / index.deposit;
             checked_sub_deposit(&mut mango_group, &mut margin_account, token_i, spent_deposit)?;
         } else {
+
             let avail_deposit = margin_account.deposits[token_i];
             checked_sub_deposit(&mut mango_group, &mut margin_account, token_i, avail_deposit)?;
             let rem_spend = U64F64::from_num(spent - native_deposit);
 
+            prog_assert!(!reduce_only)?;  // Cannot borrow more in reduce only mode
             checked_add_borrow(&mut mango_group, &mut margin_account, token_i , rem_spend / index.borrow)?;
             prog_assert!(margin_account.get_native_borrow(&index, token_i) <= mango_group.borrow_limits[token_i])?;
         }
 
-        let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        if coll_ratio < mango_group.init_coll_ratio { // only allow this if it reduces position
-            let assets = margin_account.get_total_assets(&mango_group, open_orders_accs)?;
-            let liabs = margin_account.get_total_liabs(&mango_group)?;
-
-            if token_i == NUM_MARKETS {  // means this is a bid
-                // means we are increasing market_i pos
-                // make sure market_i pos is already net borrowed
-                // strictest req make sure base currency is net borrowed
-                // strictest req make sure quote currency is not net borrowed
-                // TODO see if these reqs can be relaxed
-                prog_assert!(assets[market_i] < liabs[market_i] && assets[NUM_MARKETS] >= liabs[NUM_MARKETS])?;
-
-            } else {  // means this is offer,
-                // strictest req make sure quote currency is net borrowed
-                // strictest req make sure base currency not net borrowed
-                prog_assert!(assets[NUM_MARKETS] < liabs[NUM_MARKETS] && assets[market_i] >= liabs[market_i])?;
-            }
-        }
+        prog_assert!(reduce_only || coll_ratio >= mango_group.init_coll_ratio)?;
 
         prog_assert!(mango_group.has_valid_deposits_borrows(token_i))?;
         Ok(())
