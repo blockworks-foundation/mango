@@ -82,7 +82,8 @@ async function drainAccount(
       await client.placeOrder(connection, programId, mangoGroup, ma, market, payer, 'buy', price, size, 'limit')
     }
   }
-
+  await sleep(3000)
+  ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
   await client.settleAll(connection, programId, mangoGroup, ma, markets, payer)
   console.log('settleAll complete')
   ma = await client.getMarginAccount(connection, ma.publicKey, mangoGroup.dexProgramId)
@@ -91,6 +92,7 @@ async function drainAccount(
   console.log('Withdrawing USD')
   await client.withdraw(connection, programId, mangoGroup, ma, payer, mangoGroup.tokens[NUM_TOKENS-1], usdWallet, ma.getUiDeposit(mangoGroup, NUM_TOKENS-1) * 0.999)
 
+  console.log('Successfully drained account', ma.publicKey.toString())
 }
 
 async function runLiquidator() {
