@@ -41,7 +41,7 @@ async function setupMarginAccounts() {
 
   const prices = await mangoGroup.getPrices(connection)
 
-  console.log(marginAccount.toPrettyString(mangoGroup, prices), marginAccount.getUiSrmBalance())
+  console.log(marginAccount.toPrettyString(mangoGroup, prices))
 
   for (const ooa of marginAccount.openOrdersAccounts) {
     if (ooa == undefined) {
