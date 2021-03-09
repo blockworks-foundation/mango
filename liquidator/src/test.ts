@@ -4,7 +4,7 @@ import {
   MangoClient,
   MangoGroup,
   MarginAccount,
-  MarginAccountLayout,
+  MarginAccountLayout, nativeToUi,
   NUM_TOKENS,
 } from '@mango/client';
 import {
@@ -333,9 +333,14 @@ async function testAll() {
 
   }
 
+  async function testBorrowLimits() {
+    console.log(mangoGroup.borrowLimits.map((b, i) => nativeToUi(b, mangoGroup.mintDecimals[i])))
+  }
+
+  await testBorrowLimits()
   // await testGetOpenOrdersLatency()
   // await testPlaceCancelOrder()
-  await testDrainAccount()
+  // await testDrainAccount()
 }
 
 
