@@ -188,15 +188,17 @@ pub enum MangoInstruction {
     /// 7. `[writable]` dex_event_queue - serum dex event queue for this market
     /// 8. `[writable]` bids_acc - serum dex bids for this market
     /// 9. `[writable]` asks_acc - serum dex asks for this market
-    /// 10. `[writable]` vault_acc - mango's vault for this currency (quote if buying, base if selling)
-    /// 11. `[]` signer_acc - mango signer key
-    /// 12. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
-    /// 13. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
-    /// 14. `[]` spl token program
-    /// 15. `[]` the rent sysvar
-    /// 16. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
-    /// 17..17+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
-    /// 17+NUM_MARKETS..17+2*NUM_MARKETS `[]`
+    /// 10. `[writable]` base_vault_acc - mango vault for base currency
+    /// 11. `[writable]` quote_vault_acc - mango vault for quote currency
+    /// 12. `[]` signer_acc - mango signer key
+    /// 13. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
+    /// 14. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
+    /// 15. `[]` spl token program
+    /// 16. `[]` the rent sysvar
+    /// 17. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
+    /// 18. `[]` dex_signer_acc - signer for serum dex MarketState
+    /// 19..19+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 19+NUM_MARKETS..19+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
     PlaceOrder {
         order: serum_dex::instruction::NewOrderInstructionV3
@@ -759,11 +761,13 @@ pub fn place_order(
     dex_event_queue_pk: &Pubkey,
     bids_pk: &Pubkey,
     asks_pk: &Pubkey,
-    vault_pk: &Pubkey,
+    base_vault_pk: &Pubkey,
+    quote_vault_pk: &Pubkey,
     signer_pk: &Pubkey,
     dex_base_pk: &Pubkey,
     dex_quote_pk: &Pubkey,
     srm_vault_pk: &Pubkey,
+    dex_signer_pk: &Pubkey,
     open_orders_pks: &[Pubkey],
     oracle_pks: &[Pubkey],
     order: serum_dex::instruction::NewOrderInstructionV3
@@ -780,13 +784,15 @@ pub fn place_order(
         AccountMeta::new(*dex_event_queue_pk, false),
         AccountMeta::new(*bids_pk, false),
         AccountMeta::new(*asks_pk, false),
-        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new(*base_vault_pk, false),
+        AccountMeta::new(*quote_vault_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
         AccountMeta::new(*dex_base_pk, false),
         AccountMeta::new(*dex_quote_pk, false),
         AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
         AccountMeta::new(*srm_vault_pk, false),
+        AccountMeta::new_readonly(*dex_signer_pk, false),
     ];
 
     accounts.extend(open_orders_pks.iter().map(
