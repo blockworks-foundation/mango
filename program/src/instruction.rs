@@ -188,17 +188,15 @@ pub enum MangoInstruction {
     /// 7. `[writable]` dex_event_queue - serum dex event queue for this market
     /// 8. `[writable]` bids_acc - serum dex bids for this market
     /// 9. `[writable]` asks_acc - serum dex asks for this market
-    /// 10. `[writable]` base_vault_acc - mango vault for base currency
-    /// 11. `[writable]` quote_vault_acc - mango vault for quote currency
-    /// 12. `[]` signer_acc - mango signer key
-    /// 13. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
-    /// 14. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
-    /// 15. `[]` spl token program
-    /// 16. `[]` the rent sysvar
-    /// 17. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
-    /// 18. `[]` dex_signer_acc - signer for serum dex MarketState
-    /// 19..19+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
-    /// 19+NUM_MARKETS..19+2*NUM_MARKETS `[]`
+    /// 10. `[writable]` vault_acc - mango's vault for this currency (quote if buying, base if selling)
+    /// 11. `[]` signer_acc - mango signer key
+    /// 12. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
+    /// 13. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
+    /// 14. `[]` spl token program
+    /// 15. `[]` the rent sysvar
+    /// 16. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
+    /// 17..17+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 17+NUM_MARKETS..17+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
     PlaceOrder {
         order: serum_dex::instruction::NewOrderInstructionV3
@@ -273,6 +271,36 @@ pub enum MangoInstruction {
     ChangeBorrowLimit {
         token_index: usize,
         borrow_limit: u64
+    },
+
+    /// Place an order on the Serum Dex and settle funds from the open orders account
+    ///
+    /// Accounts expected by this instruction (19 + 2 * NUM_MARKETS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` owner_acc - MarginAccount owner
+    /// 2. `[writable]` margin_account_acc - MarginAccount
+    /// 3. `[]` clock_acc - Clock sysvar account
+    /// 4. `[]` dex_prog_acc - program id of serum dex
+    /// 5. `[writable]` spot_market_acc - serum dex MarketState
+    /// 6. `[writable]` dex_request_queue_acc - serum dex request queue for this market
+    /// 7. `[writable]` dex_event_queue - serum dex event queue for this market
+    /// 8. `[writable]` bids_acc - serum dex bids for this market
+    /// 9. `[writable]` asks_acc - serum dex asks for this market
+    /// 10. `[writable]` base_vault_acc - mango vault for base currency
+    /// 11. `[writable]` quote_vault_acc - mango vault for quote currency
+    /// 12. `[]` signer_acc - mango signer key
+    /// 13. `[writable]` dex_base_acc - serum dex market's vault for base (coin) currency
+    /// 14. `[writable]` dex_quote_acc - serum dex market's vault for quote (pc) currency
+    /// 15. `[]` spl token program
+    /// 16. `[]` the rent sysvar
+    /// 17. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
+    /// 18. `[]` dex_signer_acc - signer for serum dex MarketState
+    /// 19..19+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 19+NUM_MARKETS..19+2*NUM_MARKETS `[]`
+    ///     oracle_accs - flux aggregator feed accounts
+    PlaceAndSettle {
+        order: serum_dex::instruction::NewOrderInstructionV3
     },
 
 
@@ -400,6 +428,13 @@ impl MangoInstruction {
                 MangoInstruction::ChangeBorrowLimit {
                     token_index: usize::from_le_bytes(*token_index),
                     borrow_limit: u64::from_le_bytes(*borrow_limit)
+                }
+            }
+            14 => {
+                let data_arr = array_ref![data, 0, 46];
+                let order = unpack_dex_new_order_v3(data_arr)?;
+                MangoInstruction::PlaceAndSettle {
+                    order
                 }
             }
             _ => { return None; }
@@ -751,6 +786,63 @@ pub fn withdraw_srm(
 }
 
 pub fn place_order(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    dex_prog_id: &Pubkey,
+    spot_market_pk: &Pubkey,
+    dex_request_queue_pk: &Pubkey,
+    dex_event_queue_pk: &Pubkey,
+    bids_pk: &Pubkey,
+    asks_pk: &Pubkey,
+    vault_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    dex_base_pk: &Pubkey,
+    dex_quote_pk: &Pubkey,
+    srm_vault_pk: &Pubkey,
+    open_orders_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
+    order: serum_dex::instruction::NewOrderInstructionV3
+) -> Result<Instruction, ProgramError> {
+
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+        AccountMeta::new_readonly(*dex_prog_id, false),
+        AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*dex_request_queue_pk, false),
+        AccountMeta::new(*dex_event_queue_pk, false),
+        AccountMeta::new(*bids_pk, false),
+        AccountMeta::new(*asks_pk, false),
+        AccountMeta::new(*vault_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new(*dex_base_pk, false),
+        AccountMeta::new(*dex_quote_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::rent::ID, false),
+        AccountMeta::new(*srm_vault_pk, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(oracle_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+
+    let instr = MangoInstruction::PlaceOrder { order };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn place_and_settle(
     program_id: &Pubkey,
     mango_group_pk: &Pubkey,
     owner_pk: &Pubkey,
