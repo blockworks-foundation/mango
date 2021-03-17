@@ -894,7 +894,7 @@ pub fn place_and_settle(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::PlaceOrder { order };
+    let instr = MangoInstruction::PlaceAndSettle { order };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
