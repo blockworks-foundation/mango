@@ -14,15 +14,17 @@ cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $ETH --pc
 
 
 # Next start cranks for our devnet markets (use tmux)
-cd ~/mango/liquidator
+cd ~/liquidator
 source crank.sh btc usdt
 source crank.sh eth usdt
 
 # deploy mango program and new mango group
+
 cd ~/mango
 pushd program
 cargo build-bpf
-MANGO_PROGRAM_ID="$(solana program deploy target/deploy/mango.so | jq .programId -r)"
+solana-keygen new --outfile target/deploy/mango-dev.json
+MANGO_PROGRAM_ID="$(solana program deploy target/deploy/mango.so --program-id target/deploy/mango-dev.json | jq .programId -r)"
 popd
 cd cli
 
