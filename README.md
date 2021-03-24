@@ -1,4 +1,4 @@
-# Mango Markets - decentralized margin trading platform
+# Mango Markets - Decentralized Margin Trading
 
 ## ⚠️ Warning
 
