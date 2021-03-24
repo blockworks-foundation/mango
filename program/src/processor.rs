@@ -34,6 +34,16 @@ macro_rules! prog_assert_eq {
     }
 }
 
+mod srm_token {
+    use solana_program::declare_id;
+    #[cfg(feature = "devnet")]
+    declare_id!("9FbAMDvXqNjPqZSYt4EWTguJuDrGkfvwr3gSFpiSbX9S");
+    #[cfg(not(feature = "devnet"))]
+    declare_id!("SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt");
+}
+
+
+
 pub struct Processor {}
 
 impl Processor {
@@ -90,7 +100,7 @@ impl Processor {
         let srm_vault = Account::unpack(&srm_vault_acc.try_borrow_data()?)?;
         prog_assert!(srm_vault.is_initialized())?;
         prog_assert_eq!(&srm_vault.owner, signer_acc.key)?;
-        prog_assert_eq!(serum_dex::instruction::srm_token::ID, srm_vault.mint)?;
+        prog_assert_eq!(srm_token::ID, srm_vault.mint)?;
         prog_assert_eq!(srm_vault_acc.owner, &spl_token::id())?;
         mango_group.srm_vault = *srm_vault_acc.key;
 
