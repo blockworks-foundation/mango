@@ -15,8 +15,9 @@ pushd program
 cargo build-bpf --features devnet --bpf-out-dir target/devnet
 
 # this will give a separate program id for devnet
-solana-keygen new --outfile target/devnet/mango-dev.json
-MANGO_PROGRAM_ID="$(solana program deploy target/devnet/mango.so --program-id target/devnet/mango-dev.json | jq .programId -r)"
+#solana-keygen new --outfile target/devnet/mango-dev.json
+#MANGO_PROGRAM_ID="$(solana program deploy target/devnet/mango.so --program-id target/devnet/mango-dev.json | jq .programId -r)"
+MANGO_PROGRAM_ID="$(solana program deploy target/devnet/mango.so --program-id $MANGO_PROGRAM_ID | jq .programId -r)"
 popd
 cd cli
 

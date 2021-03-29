@@ -281,7 +281,7 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     println!("Confirming txid: {}", txid.to_string());
     client.confirm_transaction(&txid)?;
     Ok(txid)
-
+    //
     // Ok(client.send_and_confirm_transaction_with_spinner_and_config(
     //     txn,
     //     CommitmentConfig::confirmed(),

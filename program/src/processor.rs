@@ -17,7 +17,7 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::{Sysvar};
 use spl_token::state::{Account, Mint};
 
-use crate::error::{check_assert, MangoResult, SourceFileId};
+use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, check_assert2};
 use crate::instruction::{MangoInstruction};
 use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, MangoSrmAccount};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
@@ -28,11 +28,26 @@ macro_rules! prog_assert {
         check_assert($cond, line!() as u16, SourceFileId::Processor)
     }
 }
+
 macro_rules! prog_assert_eq {
     ($x:expr, $y:expr) => {
         check_assert($x == $y, line!() as u16, SourceFileId::Processor)
     }
 }
+
+
+macro_rules! prog_assert2 {
+    ($cond:expr, $err:expr) => {
+        check_assert2($cond, $err, line!(), SourceFileId::Processor)
+    }
+}
+
+macro_rules! prog_assert_eq2 {
+    ($x:expr, $y:expr, $err:expr) => {
+        check_assert2($x == $y, $err, line!(), SourceFileId::Processor)
+    }
+}
+
 
 mod srm_token {
     use solana_program::declare_id;
@@ -41,7 +56,6 @@ mod srm_token {
     #[cfg(not(feature = "devnet"))]
     declare_id!("SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt");
 }
-
 
 
 pub struct Processor {}
@@ -81,15 +95,16 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
 
         // TODO this may not be necessary since load_mut maps the data and will fail if size incorrect
-        prog_assert_eq!(size_of::<MangoGroup>(), mango_group_acc.data_len())?;
+        prog_assert_eq2!(size_of::<MangoGroup>(), mango_group_acc.data_len(), MangoErrorCode::InvalidMangoGroupSize)?;
+
         let mut mango_group = MangoGroup::load_mut(mango_group_acc)?;
 
-        prog_assert_eq!(mango_group_acc.owner, program_id)?;
-        prog_assert_eq!(mango_group.account_flags, 0)?;
+        prog_assert_eq2!(mango_group_acc.owner, program_id, MangoErrorCode::InvalidGroupOwner)?;
+        prog_assert_eq2!(mango_group.account_flags, 0, MangoErrorCode::InvalidGroupFlags)?;
         mango_group.account_flags = (AccountFlag::Initialized | AccountFlag::MangoGroup).bits();
 
-        prog_assert!(rent.is_exempt(mango_group_acc.lamports(), size_of::<MangoGroup>()))?;
-        prog_assert_eq!(gen_signer_key(signer_nonce, mango_group_acc.key, program_id)?, *signer_acc.key)?;
+        prog_assert2!(rent.is_exempt(mango_group_acc.lamports(), size_of::<MangoGroup>()), MangoErrorCode::GroupNotRentExempt)?;
+        prog_assert2!(gen_signer_key(signer_nonce, mango_group_acc.key, program_id)? == *signer_acc.key, MangoErrorCode::InvalidSignerKey)?;
         mango_group.signer_nonce = signer_nonce;
         mango_group.signer_key = *signer_acc.key;
         mango_group.dex_program_id = *dex_prog_acc.key;
@@ -98,14 +113,14 @@ impl Processor {
 
         // verify SRM vault is valid then set
         let srm_vault = Account::unpack(&srm_vault_acc.try_borrow_data()?)?;
-        prog_assert!(srm_vault.is_initialized())?;
-        prog_assert_eq!(&srm_vault.owner, signer_acc.key)?;
-        prog_assert_eq!(srm_token::ID, srm_vault.mint)?;
-        prog_assert_eq!(srm_vault_acc.owner, &spl_token::id())?;
+        prog_assert2!(srm_vault.is_initialized(), MangoErrorCode::Default)?;
+        prog_assert_eq2!(&srm_vault.owner, signer_acc.key, MangoErrorCode::Default)?;
+        prog_assert_eq2!(srm_token::ID, srm_vault.mint, MangoErrorCode::Default)?;
+        prog_assert_eq2!(srm_vault_acc.owner, &spl_token::id(), MangoErrorCode::Default)?;
         mango_group.srm_vault = *srm_vault_acc.key;
 
         // Set the admin key and make sure it's a signer
-        prog_assert!(admin_acc.is_signer)?;
+        prog_assert2!(admin_acc.is_signer, MangoErrorCode::Default)?;
         mango_group.admin = *admin_acc.key;
         mango_group.borrow_limits = borrow_limits;
 
@@ -115,10 +130,10 @@ impl Processor {
             let mint = Mint::unpack(&mint_acc.try_borrow_data()?)?;
             let vault_acc = &vault_accs[i];
             let vault = Account::unpack(&vault_acc.try_borrow_data()?)?;
-            prog_assert!(vault.is_initialized())?;
-            prog_assert_eq!(&vault.owner, signer_acc.key)?;
-            prog_assert_eq!(&vault.mint, mint_acc.key)?;
-            prog_assert_eq!(vault_acc.owner, &spl_token::id())?;
+            prog_assert2!(vault.is_initialized(), MangoErrorCode::Default)?;
+            prog_assert_eq2!(&vault.owner, signer_acc.key, MangoErrorCode::Default)?;
+            prog_assert_eq2!(&vault.mint, mint_acc.key, MangoErrorCode::Default)?;
+            prog_assert_eq2!(vault_acc.owner, &spl_token::id(), MangoErrorCode::Default)?;
             mango_group.tokens[i] = *mint_acc.key;
             mango_group.vaults[i] = *vault_acc.key;
             mango_group.indexes[i] = MangoIndex {
@@ -136,8 +151,8 @@ impl Processor {
             )?;
             let sm_base_mint = spot_market.coin_mint;
             let sm_quote_mint = spot_market.pc_mint;
-            prog_assert_eq!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes())?;
-            prog_assert_eq!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes())?;
+            prog_assert_eq2!(sm_base_mint, token_mint_accs[i].key.to_aligned_bytes(), MangoErrorCode::Default)?;
+            prog_assert_eq2!(sm_quote_mint, token_mint_accs[NUM_MARKETS].key.to_aligned_bytes(), MangoErrorCode::Default)?;
             mango_group.spot_markets[i] = *spot_market_acc.key;
             mango_group.oracles[i] = *oracle_accs[i].key;
 
@@ -205,6 +220,8 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
+        prog_assert_eq2!(&margin_account.owner, owner_acc.key, MangoErrorCode::InvalidMarginAccountOwner)?;
+
         let token_index = mango_group.get_token_index_with_vault(vault_acc.key).unwrap();
         prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
@@ -236,6 +253,7 @@ impl Processor {
         accounts: &[AccountInfo],
         quantity: u64
     ) -> MangoResult<()> {
+
         const NUM_FIXED: usize = 8;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS];
         let (
@@ -255,12 +273,14 @@ impl Processor {
             clock_acc,
         ] = fixed_accs;
 
+
         let mut mango_group = MangoGroup::load_mut_checked(
             mango_group_acc, program_id
         )?;
         let mut margin_account = MarginAccount::load_mut_checked(
             program_id, margin_account_acc, mango_group_acc.key
         )?;
+
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
@@ -276,21 +296,19 @@ impl Processor {
         prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
         let index: &MangoIndex = &mango_group.indexes[token_index];
-        let native_deposits: u64 = (margin_account.deposits[token_index] * index.deposit).to_num();
+        let native_deposits: u64 = (margin_account.deposits[token_index].checked_mul(index.deposit).unwrap()).to_num();
         let available = native_deposits;
 
-        prog_assert!(available >= quantity)?;
+        prog_assert2!(available >= quantity, MangoErrorCode::InsufficientFunds)?;
         // TODO just borrow (quantity - available)
-
         let prices = get_prices(&mango_group, oracle_accs)?;
-
         // Withdraw from deposit
         let withdrew: U64F64 = U64F64::from_num(quantity) / index.deposit;
         checked_sub_deposit(&mut mango_group, &mut margin_account, token_index, withdrew)?;
 
         // Make sure accounts are in valid state after withdrawal
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
+        prog_assert2!(coll_ratio >= mango_group.init_coll_ratio, MangoErrorCode::CollateralRatioLimit)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(token_index))?;
 
         // Send out withdraw instruction to SPL token program
@@ -309,8 +327,10 @@ impl Processor {
             signer_acc.clone(),
             token_prog_acc.clone()
         ];
+
         let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
         solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
+
         Ok(())
     }
 
@@ -677,23 +697,23 @@ impl Processor {
         ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS];
 
         let [
-        mango_group_acc,
-        owner_acc,
-        margin_account_acc,
-        clock_acc,
-        dex_prog_acc,
-        spot_market_acc,
-        dex_request_queue_acc,
-        dex_event_queue_acc,
-        bids_acc,
-        asks_acc,
-        vault_acc,
-        signer_acc,
-        dex_base_acc,
-        dex_quote_acc,
-        token_prog_acc,
-        rent_acc,
-        srm_vault_acc,
+            mango_group_acc,
+            owner_acc,
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            spot_market_acc,
+            dex_request_queue_acc,
+            dex_event_queue_acc,
+            bids_acc,
+            asks_acc,
+            vault_acc,
+            signer_acc,
+            dex_base_acc,
+            dex_quote_acc,
+            token_prog_acc,
+            rent_acc,
+            srm_vault_acc,
         ] = fixed_accs;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
@@ -959,7 +979,7 @@ impl Processor {
         accounts: &[AccountInfo],
         order: serum_dex::instruction::NewOrderInstructionV3
     ) -> MangoResult<()> {
-        const NUM_FIXED: usize = 19;  // *** Changed
+        const NUM_FIXED: usize = 19;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS];
         let (
             fixed_accs,
@@ -1121,7 +1141,7 @@ impl Processor {
 
                 prog_assert!(!reduce_only)?;  // Cannot borrow more in reduce only mode
                 checked_add_borrow(&mut mango_group, &mut margin_account, out_token_i, rem_spend / out_index.borrow)?;
-                prog_assert!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i])?;
+                prog_assert2!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::AboveBorrowLimit)?;
             } else {  // just spend user deposits
                 let mango_spent = U64F64::from_num(total_out) / out_index.deposit;
                 checked_sub_deposit(&mut mango_group, &mut margin_account, out_token_i, mango_spent)?;
@@ -1140,7 +1160,7 @@ impl Processor {
         settle_borrow_full_unchecked(&mut mango_group, &mut margin_account, in_token_i)?;
 
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        prog_assert!(reduce_only || coll_ratio >= mango_group.init_coll_ratio)?;
+        prog_assert2!(reduce_only || coll_ratio >= mango_group.init_coll_ratio, MangoErrorCode::CollateralRatioLimit)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(out_token_i))?;
 
         Ok(())
@@ -1380,6 +1400,7 @@ pub fn get_prices(
         );
 
         let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
+
         let value = U64F64::from_num(answer.median);
 
         let base_adj = U64F64::from_num(10u64.pow(mango_group.mint_decimals[i] as u32));
