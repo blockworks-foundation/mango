@@ -2,3 +2,5 @@
 /client-ts/lib/
 /liquidator/dist/
 /program/target
+/cli/target
+.DS_Store
