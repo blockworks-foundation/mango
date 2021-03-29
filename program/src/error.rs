@@ -55,12 +55,20 @@ pub enum MangoError {
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
 #[repr(u32)]
 pub enum MangoErrorCode {
+    #[error("MangoErrorCode::AboveBorrowLimit This transaction would exceed the borrow limit")]
+    AboveBorrowLimit,
+    #[error("MangoErrorCode::CollateralRatioLimit Your collateral ratio is below the minimum initial collateral ratio")]
+    CollateralRatioLimit,
+    #[error("MangoErrorCode::InsufficientFunds Quantity requested is above the available balance")]
+    InsufficientFunds,
     #[error("MangoErrorCode::InvalidMangoGroupSize")]
     InvalidMangoGroupSize,
     #[error("MangoErrorCode::InvalidGroupOwner")]
     InvalidGroupOwner,
     #[error("MangoErrorCode::InvalidGroupFlags")]
     InvalidGroupFlags,
+    #[error("MangoErrorCode::InvalidMarginAccountOwner This margin account is not owned by the wallet address")]
+    InvalidMarginAccountOwner,
     #[error("MangoErrorCode::GroupNotRentExempt")]
     GroupNotRentExempt,
     #[error("MangoErrorCode::InvalidSignerKey")]

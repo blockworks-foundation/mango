@@ -221,6 +221,8 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
+        prog_assert_eq2!(&margin_account.owner, owner_acc.key, MangoErrorCode::InvalidMarginAccountOwner)?;
+
         let token_index = mango_group.get_token_index_with_vault(vault_acc.key).unwrap();
         prog_assert_eq!(&mango_group.vaults[token_index], vault_acc.key)?;
 
@@ -304,7 +306,7 @@ impl Processor {
         let native_deposits: u64 = (margin_account.deposits[token_index].checked_mul(index.deposit).unwrap()).to_num();
         let available = native_deposits;
 
-        prog_assert!(available >= quantity)?;
+        prog_assert2!(available >= quantity, MangoErrorCode::InsufficientFunds)?;
         // TODO just borrow (quantity - available)
         sol_log_compute_units();
         let prices = get_prices(&mango_group, oracle_accs)?;
@@ -315,7 +317,7 @@ impl Processor {
 
         // Make sure accounts are in valid state after withdrawal
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        prog_assert!(coll_ratio >= mango_group.init_coll_ratio)?;
+        prog_assert2!(coll_ratio >= mango_group.init_coll_ratio, MangoErrorCode::CollateralRatioLimit)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(token_index))?;
 
         // Send out withdraw instruction to SPL token program
@@ -1148,7 +1150,7 @@ impl Processor {
 
                 prog_assert!(!reduce_only)?;  // Cannot borrow more in reduce only mode
                 checked_add_borrow(&mut mango_group, &mut margin_account, out_token_i, rem_spend / out_index.borrow)?;
-                prog_assert!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i])?;
+                prog_assert2!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::AboveBorrowLimit)?;
             } else {  // just spend user deposits
                 let mango_spent = U64F64::from_num(total_out) / out_index.deposit;
                 checked_sub_deposit(&mut mango_group, &mut margin_account, out_token_i, mango_spent)?;
@@ -1167,7 +1169,7 @@ impl Processor {
         settle_borrow_full_unchecked(&mut mango_group, &mut margin_account, in_token_i)?;
 
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        prog_assert!(reduce_only || coll_ratio >= mango_group.init_coll_ratio)?;
+        prog_assert2!(reduce_only || coll_ratio >= mango_group.init_coll_ratio, MangoErrorCode::CollateralRatioLimit)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(out_token_i))?;
 
         Ok(())
