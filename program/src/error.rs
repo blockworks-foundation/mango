@@ -2,14 +2,15 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 use num_enum::IntoPrimitive;
+use serum_dex::error::DexError;
 use solana_program::program_error::ProgramError;
 use thiserror::Error;
-use serum_dex::error::DexError;
+use bytemuck::Contiguous;
 
 pub type MangoResult<T = ()> = Result<T, MangoError>;
 
 #[repr(u8)]
-#[derive(Error, Debug, Clone, Eq, PartialEq)]
+#[derive(Error, Debug, Clone, Eq, PartialEq, Copy)]
 pub enum SourceFileId {
     #[error("src/processor.rs")]
     Processor = 0,
@@ -45,24 +46,35 @@ impl From<AssertionError> for u32 {
 pub enum MangoError {
     #[error(transparent)]
     ProgramError(#[from] ProgramError),
-    #[error(transparent)]
-    MangoErrorCode(#[from] MangoErrorCode),  // Just wraps MangoErrorCode into MangoError::MangoErrorCode
+    #[error("{mango_error_code}; source: {source_file_id}:{line}")]
+    MangoErrorCode { mango_error_code: MangoErrorCode, line: u32, source_file_id: SourceFileId},  // Just wraps MangoErrorCode into MangoError::MangoErrorCode
     #[error(transparent)]
     AssertionError(#[from] AssertionError)
 }
 
-#[derive(Debug, Error, IntoPrimitive, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
 #[repr(u32)]
 pub enum MangoErrorCode {
-    #[error("Invalid group owner; MangoGroup must be owned by Mango program id")]
-    InvalidGroupOwner
+    #[error("MangoErrorCode::InvalidMangoGroupSize")]
+    InvalidMangoGroupSize,
+    #[error("MangoErrorCode::InvalidGroupOwner")]
+    InvalidGroupOwner,
+    #[error("MangoErrorCode::InvalidGroupFlags")]
+    InvalidGroupFlags,
+    #[error("MangoErrorCode::GroupNotRentExempt")]
+    GroupNotRentExempt,
+    #[error("MangoErrorCode::InvalidSignerKey")]
+    InvalidSignerKey,
+
+    #[error("MangoErrorCode::Default")]
+    Default = u32::MAX_VALUE,
 }
 
 impl From<MangoError> for ProgramError {
     fn from(e: MangoError) -> ProgramError {
         match e {
             MangoError::ProgramError(pe) => pe,
-            MangoError::MangoErrorCode(mec) => ProgramError::Custom(mec.into()),
+            MangoError::MangoErrorCode { mango_error_code, line: _, source_file_id: _ } => ProgramError::Custom(mango_error_code.into()),
             MangoError::AssertionError(ae) => ProgramError::Custom(ae.into())
         }
     }
@@ -84,5 +96,20 @@ pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> MangoResult
             line,
             file_id
         }))
+    }
+}
+
+#[inline]
+pub fn check_assert2(
+    cond: bool,
+    mango_error_code:
+    MangoErrorCode,
+    line: u32,
+    source_file_id: SourceFileId
+) -> MangoResult<()> {
+    if cond {
+        Ok(())
+    } else {
+        Err(MangoError::MangoErrorCode { mango_error_code, line, source_file_id })
     }
 }
