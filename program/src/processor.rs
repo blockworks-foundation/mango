@@ -42,8 +42,6 @@ mod srm_token {
     declare_id!("SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt");
 }
 
-
-
 pub struct Processor {}
 
 impl Processor {
@@ -677,23 +675,23 @@ impl Processor {
         ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS];
 
         let [
-        mango_group_acc,
-        owner_acc,
-        margin_account_acc,
-        clock_acc,
-        dex_prog_acc,
-        spot_market_acc,
-        dex_request_queue_acc,
-        dex_event_queue_acc,
-        bids_acc,
-        asks_acc,
-        vault_acc,
-        signer_acc,
-        dex_base_acc,
-        dex_quote_acc,
-        token_prog_acc,
-        rent_acc,
-        srm_vault_acc,
+            mango_group_acc,
+            owner_acc,
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            spot_market_acc,
+            dex_request_queue_acc,
+            dex_event_queue_acc,
+            bids_acc,
+            asks_acc,
+            vault_acc,
+            signer_acc,
+            dex_base_acc,
+            dex_quote_acc,
+            token_prog_acc,
+            rent_acc,
+            srm_vault_acc,
         ] = fixed_accs;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
@@ -1143,6 +1141,122 @@ impl Processor {
         prog_assert!(reduce_only || coll_ratio >= mango_group.init_coll_ratio)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(out_token_i))?;
 
+        Ok(())
+    }
+
+
+    #[inline(never)]
+    fn partial_liquidate(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        deposit_quantities: [u64; NUM_TOKENS]
+    ) -> MangoResult<()> {
+
+        const NUM_FIXED: usize = 6;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 6 * NUM_MARKETS + 2 * NUM_TOKENS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            oracle_accs,
+            spot_market_accs,
+            bids_accs,
+            asks_accs,
+            dex_event_queues,
+            vault_accs,
+            liqor_token_account_accs,
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS, NUM_MARKETS,
+                        NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS];
+
+        let [
+            mango_group_acc,
+            liqor_acc,
+            liqee_margin_account_acc,
+            token_prog_acc,
+            clock_acc,
+            dex_prog_acc,
+
+        ] = fixed_accs;
+
+        // margin ratio = equity / val(borrowed)
+        // equity = val(positions) - val(borrowed) + val(collateral)
+        prog_assert!(liqor_acc.is_signer)?;
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc, program_id
+        )?;
+        let mut liqee_margin_account = MarginAccount::load_mut_checked(
+            program_id, liqee_margin_account_acc, mango_group_acc.key
+        )?;
+        let clock = Clock::from_account_info(clock_acc)?;
+        mango_group.update_indexes(&clock)?;
+
+        for i in 0..NUM_MARKETS {
+            prog_assert_eq!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
+            check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
+        }
+
+        let prices = get_prices(&mango_group, oracle_accs)?;
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs
+        )?;
+
+        for i in 0..NUM_MARKETS {
+            let spot_market_acc: &AccountInfo = &spot_market_accs[i];
+            let open_orders_acc: &AccountInfo = &open_orders_accs[i];
+            let bids_acc: &AccountInfo = &bids_accs[i];
+            let asks_acc: &AccountInfo = &asks_accs[i];
+
+            let open_orders = load_open_orders(open_orders_acc)?;
+
+            let free_slot_bits = open_orders.free_slot_bits;
+            let mut num_orders = free_slot_bits.count_zeros();
+            let mut j: usize = 0;
+
+            for j in 0..128 {
+                if num_orders == 0 {
+                    break;
+                }
+
+                let slot_is_free = (free_slot_bits & 1u128) != 0;
+                let free_slot_bits = free_slot_bits >> 1;
+                if slot_is_free {
+                    continue
+                }
+
+                let oid = open_orders.orders[j];
+                num_orders -= 1;
+
+                invoke_cancel_order(
+                    dex_prog_acc,
+                    spot_market_acc,
+                    bids_acc,
+                    asks_acc,
+                    open_orders_acc,
+
+                )
+
+            }
+
+            while num_orders > 0 {
+                let slot_is_free = (free_slot_bits & 1u128) != 0;
+                let free_slot_bits = free_slot_bits >> 1;
+                let oid = open_orders.orders[j];
+                j += 1;
+                if slot_is_free {
+                    continue;
+                }
+                num_orders -= 1;
+            }
+
+
+        }
+
+        // cancel orders,
+        // settle funds
+        // settle borrows
+        // allow liquidations up until the account gets above init collateral ratio
+        // if account hits 0 deposits, socialize losses
+
+        // offset borrows
         Ok(())
     }
 
