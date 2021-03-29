@@ -17,12 +17,11 @@ use solana_program::rent::Rent;
 use solana_program::sysvar::{Sysvar};
 use spl_token::state::{Account, Mint};
 
-use crate::error::{check_assert, MangoResult, SourceFileId, MangoError, MangoErrorCode, check_assert2};
+use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, check_assert2};
 use crate::instruction::{MangoInstruction};
 use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, MangoSrmAccount};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
 use solana_program::entrypoint::ProgramResult;
-use solana_program::log::sol_log_compute_units;
 
 macro_rules! prog_assert {
     ($cond:expr) => {
@@ -283,16 +282,10 @@ impl Processor {
         )?;
 
         let clock = Clock::from_account_info(clock_acc)?;
-
-        sol_log_compute_units();
-
         mango_group.update_indexes(&clock)?;
-
-        sol_log_compute_units();
 
         prog_assert!(owner_acc.is_signer)?;
         prog_assert_eq!(&margin_account.owner, owner_acc.key)?;
-
 
         for i in 0..NUM_MARKETS {
             prog_assert_eq!(open_orders_accs[i].key, &margin_account.open_orders[i])?;
@@ -308,9 +301,7 @@ impl Processor {
 
         prog_assert2!(available >= quantity, MangoErrorCode::InsufficientFunds)?;
         // TODO just borrow (quantity - available)
-        sol_log_compute_units();
         let prices = get_prices(&mango_group, oracle_accs)?;
-        sol_log_compute_units();
         // Withdraw from deposit
         let withdrew: U64F64 = U64F64::from_num(quantity) / index.deposit;
         checked_sub_deposit(&mut mango_group, &mut margin_account, token_index, withdrew)?;
@@ -706,23 +697,23 @@ impl Processor {
         ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS];
 
         let [
-        mango_group_acc,
-        owner_acc,
-        margin_account_acc,
-        clock_acc,
-        dex_prog_acc,
-        spot_market_acc,
-        dex_request_queue_acc,
-        dex_event_queue_acc,
-        bids_acc,
-        asks_acc,
-        vault_acc,
-        signer_acc,
-        dex_base_acc,
-        dex_quote_acc,
-        token_prog_acc,
-        rent_acc,
-        srm_vault_acc,
+            mango_group_acc,
+            owner_acc,
+            margin_account_acc,
+            clock_acc,
+            dex_prog_acc,
+            spot_market_acc,
+            dex_request_queue_acc,
+            dex_event_queue_acc,
+            bids_acc,
+            asks_acc,
+            vault_acc,
+            signer_acc,
+            dex_base_acc,
+            dex_quote_acc,
+            token_prog_acc,
+            rent_acc,
+            srm_vault_acc,
         ] = fixed_accs;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
