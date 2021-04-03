@@ -16,7 +16,6 @@ pub enum SourceFileId {
     Processor = 0,
     #[error("src/state.rs")]
     State = 1,
-
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -47,7 +46,7 @@ pub enum MangoError {
     #[error(transparent)]
     ProgramError(#[from] ProgramError),
     #[error("{mango_error_code}; source: {source_file_id}:{line}")]
-    MangoErrorCode { mango_error_code: MangoErrorCode, line: u32, source_file_id: SourceFileId},  // Just wraps MangoErrorCode into MangoError::MangoErrorCode
+    MangoErrorCode { mango_error_code: MangoErrorCode, line: u32, source_file_id: SourceFileId},
     #[error(transparent)]
     AssertionError(#[from] AssertionError)
 }
@@ -55,8 +54,8 @@ pub enum MangoError {
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
 #[repr(u32)]
 pub enum MangoErrorCode {
-    #[error("MangoErrorCode::AboveBorrowLimit This transaction would exceed the borrow limit")]
-    AboveBorrowLimit,
+    #[error("MangoErrorCode::BorrowLimitExceeded This instruction would exceed the borrow limit")]
+    BorrowLimitExceeded,
     #[error("MangoErrorCode::CollateralRatioLimit Your collateral ratio is below the minimum initial collateral ratio")]
     CollateralRatioLimit,
     #[error("MangoErrorCode::InsufficientFunds Quantity requested is above the available balance")]
@@ -73,8 +72,18 @@ pub enum MangoErrorCode {
     GroupNotRentExempt,
     #[error("MangoErrorCode::InvalidSignerKey")]
     InvalidSignerKey,
+    #[error("MangoErrorCode::InvalidProgramId")]
+    InvalidProgramId,
+    #[error("MangoErrorCode::NotLiquidatable")]
+    NotLiquidatable,
+    #[error("MangoErrorCode::InvalidOpenOrdersAccount")]
+    InvalidOpenOrdersAccount,
+    #[error("MangoErrorCode::SignerNecessary")]
+    SignerNecessary,
+    #[error("MangoErrorCode::InvalidMangoVault")]
+    InvalidMangoVault,
 
-    #[error("MangoErrorCode::Default")]
+    #[error("MangoErrorCode::Default Check the source code for more info")]
     Default = u32::MAX_VALUE,
 }
 
@@ -82,7 +91,11 @@ impl From<MangoError> for ProgramError {
     fn from(e: MangoError) -> ProgramError {
         match e {
             MangoError::ProgramError(pe) => pe,
-            MangoError::MangoErrorCode { mango_error_code, line: _, source_file_id: _ } => ProgramError::Custom(mango_error_code.into()),
+            MangoError::MangoErrorCode {
+                mango_error_code,
+                line: _,
+                source_file_id: _
+            } => ProgramError::Custom(mango_error_code.into()),
             MangoError::AssertionError(ae) => ProgramError::Custom(ae.into())
         }
     }

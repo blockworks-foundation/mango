@@ -3,25 +3,26 @@ use std::mem::size_of;
 
 use arrayref::{array_ref, array_refs};
 use fixed::types::U64F64;
+use fixed_macro::types::U64F64;
 use flux_aggregator::borsh_state::InitBorshState;
 use serum_dex::matching::Side;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
+use solana_program::entrypoint::ProgramResult;
 use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack};
 use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
-use solana_program::sysvar::{Sysvar};
+use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
 
-use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, check_assert2};
-use crate::instruction::{MangoInstruction};
-use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MarginAccount, NUM_MARKETS, NUM_TOKENS, MangoSrmAccount};
+use crate::error::{check_assert, check_assert2, MangoErrorCode, MangoResult, SourceFileId};
+use crate::instruction::MangoInstruction;
+use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, ZERO_U64F64, PARTIAL_LIQ_INCENTIVE};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
-use solana_program::entrypoint::ProgramResult;
 
 macro_rules! prog_assert {
     ($cond:expr) => {
@@ -51,12 +52,14 @@ macro_rules! prog_assert_eq2 {
 
 mod srm_token {
     use solana_program::declare_id;
+
     #[cfg(feature = "devnet")]
     declare_id!("9FbAMDvXqNjPqZSYt4EWTguJuDrGkfvwr3gSFpiSbX9S");
     #[cfg(not(feature = "devnet"))]
     declare_id!("SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt");
 }
 
+pub const LIQ_MIN_COLL_RATIO: U64F64 = U64F64!(1.01);
 
 pub struct Processor {}
 
@@ -138,8 +141,8 @@ impl Processor {
             mango_group.vaults[i] = *vault_acc.key;
             mango_group.indexes[i] = MangoIndex {
                 last_update: curr_ts,
-                borrow: U64F64::from_num(1),
-                deposit: U64F64::from_num(1)  // Smallest unit of interest is 0.0001% or 0.000001
+                borrow: ONE_U64F64,
+                deposit: ONE_U64F64  // Smallest unit of interest is 0.0001% or 0.000001
             };
             mango_group.mint_decimals[i] = mint.decimals;
         }
@@ -440,8 +443,6 @@ impl Processor {
             clock_acc
         ] = fixed_accs;
 
-        // margin ratio = equity / val(borrowed)
-        // equity = val(positions) - val(borrowed) + val(collateral)
         prog_assert!(liqor_acc.is_signer)?;
         let mut mango_group = MangoGroup::load_mut_checked(
             mango_group_acc, program_id
@@ -459,10 +460,11 @@ impl Processor {
 
         let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs)?;
+            &mango_group, &prices, open_orders_accs
+        )?;
 
         // No liquidations if account above maint collateral ratio
-        prog_assert!(coll_ratio < mango_group.maint_coll_ratio)?;
+        prog_assert2!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
 
         // Settle borrows to see if it gets us above maint
         for i in 0..NUM_TOKENS {
@@ -470,21 +472,22 @@ impl Processor {
             settle_borrow_unchecked(&mut mango_group, &mut liqee_margin_account, i, native_borrow)?;
         }
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs)?;
+            &mango_group, &prices, open_orders_accs
+        )?;
         if coll_ratio >= mango_group.maint_coll_ratio {  // if account not liquidatable after settle borrow, then return
             return Ok(())
         }
 
         // TODO liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
 
-        if coll_ratio < U64F64::from_num(1) {
+        if coll_ratio < ONE_U64F64 {
             let liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
             let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
             let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
 
             // reduction_val = amount of quote currency value to reduce liabilities by to get coll_ratio = 1.01
             let reduction_val = liabs_val
-                .checked_sub(assets_val / U64F64::from_num(1.01)).unwrap();
+                .checked_sub(assets_val / LIQ_MIN_COLL_RATIO).unwrap();
 
             for i in 0..NUM_TOKENS {
                 let proportion = U64F64::from_num(liabs[i])
@@ -1141,7 +1144,7 @@ impl Processor {
 
                 prog_assert!(!reduce_only)?;  // Cannot borrow more in reduce only mode
                 checked_add_borrow(&mut mango_group, &mut margin_account, out_token_i, rem_spend / out_index.borrow)?;
-                prog_assert2!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::AboveBorrowLimit)?;
+                prog_assert2!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::BorrowLimitExceeded)?;
             } else {  // just spend user deposits
                 let mango_spent = U64F64::from_num(total_out) / out_index.deposit;
                 checked_sub_deposit(&mut mango_group, &mut margin_account, out_token_i, mango_spent)?;
@@ -1162,6 +1165,209 @@ impl Processor {
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
         prog_assert2!(reduce_only || coll_ratio >= mango_group.init_coll_ratio, MangoErrorCode::CollateralRatioLimit)?;
         prog_assert!(mango_group.has_valid_deposits_borrows(out_token_i))?;
+
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn partial_liquidate(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        deposit_quantities: [u64; NUM_TOKENS],
+        max_deposit: u64
+    ) -> MangoResult<()> {
+
+        // Cancel as many orders as possible for the selected market
+        // put account in liquidation mode
+        // if account is_liquidating, then no new orders can be created until account gets above init_coll_ratio
+        //
+
+        // cancel orders,
+        // settle funds
+        // settle borrows
+        // allow liquidations up until the account gets above init collateral ratio
+        // if account hits 0 deposits, socialize losses
+        // offset borrows
+
+        const NUM_FIXED: usize = 14;
+        // TODO make it so canceling orders feature is optional if no orders outstanding to cancel
+        let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + NUM_TOKENS];
+        let (
+            fixed_accs,
+            open_orders_accs,
+            oracle_accs,
+            vault_accs,
+        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS];
+
+        let [
+            mango_group_acc,
+            liqor_acc,
+            liqor_in_token_acc,
+            liqor_out_token_acc,
+            liqee_margin_account_acc,
+            spot_market_acc,
+            bids_acc,
+            asks_acc,
+            signer_acc,
+            dex_event_queue_acc,
+            dex_base_acc,
+            dex_quote_acc,
+            token_prog_acc,
+            dex_prog_acc,
+        ] = fixed_accs;
+
+        prog_assert_eq2!(token_prog_acc.key, &spl_token::id(), MangoErrorCode::InvalidProgramId)?;
+        prog_assert2!(liqor_acc.is_signer, MangoErrorCode::SignerNecessary)?;
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc, program_id
+        )?;
+        prog_assert_eq2!(dex_prog_acc.key, &mango_group.dex_program_id, MangoErrorCode::InvalidProgramId)?;
+        prog_assert_eq2!(signer_acc.key, &mango_group.signer_key, MangoErrorCode::InvalidSignerKey)?;
+
+        for i in 0..NUM_TOKENS {
+            prog_assert_eq2!(&mango_group.vaults[i], vault_accs[i].key, MangoErrorCode::InvalidMangoVault)?;
+        }
+
+        let mut liqee_margin_account = MarginAccount::load_mut_checked(
+            program_id, liqee_margin_account_acc, mango_group_acc.key
+        )?;
+
+        for i in 0..NUM_MARKETS {
+            prog_assert_eq2!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i],
+                MangoErrorCode::InvalidOpenOrdersAccount)?;
+            check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
+        }
+
+        let prices = get_prices(&mango_group, oracle_accs)?;
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs
+        )?;
+
+        // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
+        if liqee_margin_account.being_liquidated {
+            if coll_ratio >= mango_group.init_coll_ratio {
+                // TODO do same check in place_and_settle
+                liqee_margin_account.being_liquidated = false;
+                return Ok(());
+            }
+        } else {
+            prog_assert2!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
+        }
+
+        // Force cancel some orders to recoup funds for liquidator to withdraw
+        let market_index = mango_group.get_market_index(spot_market_acc.key).unwrap();
+        let open_orders_acc = &open_orders_acc[market_index];
+        let signers_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+
+        cancel_all(open_orders_acc, dex_prog_acc, spot_market_acc, bids_acc, asks_acc, signer_acc,
+                   dex_event_queue_acc, dex_base_acc, dex_quote_acc,
+                   &vault_accs[market_index], &vault_accs[NUM_MARKETS],
+                   dex_signer_acc, token_prog_acc, &[&signers_seeds], 5)?;
+
+        for i in 0..NUM_TOKENS {
+            settle_borrow_full_unchecked(&mut mango_group, &mut liqee_margin_account, i)?;
+        }
+
+        // Check again to see if account still liquidatable
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs
+        )?;
+        if liqee_margin_account.being_liquidated {
+            if coll_ratio >= mango_group.init_coll_ratio {
+                // TODO make sure liquidator knows why tx was success but he didn't receive any funds
+                liqee_margin_account.being_liquidated = false;
+                return Ok(());
+            }
+        } else if coll_ratio >= mango_group.maint_coll_ratio {
+            return Ok(());
+        } else {
+            liqee_margin_account.being_liquidated = true;
+            // TODO make it so you can't place orders when account is being liquidated
+            // TODO set max orders allowed
+        }
+
+        // Now try to liquidate
+        let liqor_in_token_account = Account::unpack(&liqor_in_token_acc.try_borrow_data()?)?;
+        let in_token_index = mango_group.get_token_index(&liqor_in_token_account.mint).unwrap();
+        let liqor_out_token_account = Account::unpack(&liqor_out_token_acc.try_borrow_data()?)?;
+        let out_token_index = mango_group.get_token_index(&liqor_out_token_account.mint).unwrap();
+        prog_assert2!(in_token_index != out_token_index, MangoErrorCode::Default)?;
+
+        // Calculate maximum possible deposit amount
+        let deficit_val = liqee_margin_account.get_partial_liq_deficit(
+            &mango_group, &prices, open_orders_accs)?;
+
+        let out_withdrawable = liqee_margin_account.get_native_deposit(
+            &mango_group.indexes[out_token_index], out_token_index);
+        let val_out_withdrawable = U64F64::from_num(out_withdrawable)
+            .checked_mul(prices[out_token_index]).unwrap();
+
+        // Can only deposit as much as it is possible to withdraw out_token
+        let max_in_val = val_out_withdrawable / PARTIAL_LIQ_INCENTIVE;
+        let max_in_val = if deficit_val < max_in_val {
+            deficit_val
+        } else {
+            max_in_val
+        };
+
+        // we know prices are not 0; if they are this will error;
+        // TODO price could be very small
+        // TODO verify all the rounding errors
+        let max_in: U64F64 = max_in_val / prices[in_token_index];
+        let max_in_token: u64 = max_in.checked_ceil().unwrap().to_num();
+        let native_borrow = liqee_margin_account.get_native_borrow(
+            &mango_group.indexes[in_token_index], in_token_index);
+        // Can only deposit as much there is borrows to offset in in_token
+        let in_quantity = std::cmp::min(std::cmp::min(max_in_token, native_borrow), max_deposit);
+
+        let deposit_instruction = spl_token::instruction::transfer(
+            &spl_token::id(),
+            liqor_in_token_acc.key,
+            vault_accs[in_token_index].key,
+            &liqor_acc.key, &[], in_quantity
+        )?;
+        let deposit_accs = [
+            liqor_in_token_acc.clone(),
+            vault_accs[in_token_index].clone(),
+            liqor_acc.clone(),
+            token_prog_acc.clone()
+        ];
+
+        solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
+        let deposit: U64F64 = U64F64::from_num(in_quantity) / mango_group.indexes[in_token_index].borrow;
+        checked_sub_borrow(&mut mango_group, &mut liqee_margin_account, in_token_index, deposit)?;
+
+        // Withdraw
+        let in_val: U64F64 = U64F64::from_num(in_quantity) * prices[in_token_index];
+        let out_val: U64F64 = in_val * PARTIAL_LIQ_INCENTIVE;
+        let out_quantity: u64 = (out_val / prices[out_token_index]).checked_floor().unwrap().to_num();
+        let withdraw_instruction = spl_token::instruction::transfer(
+            &spl_token::ID,
+            vault_accs[out_token_index].key,
+            liqor_out_token_acc.key,
+            signer_acc.key,
+            &[],
+            out_quantity
+        )?;
+        let withdraw_accs = [
+            vault_accs[out_token_index].clone(),
+            liqor_out_token_acc.clone(),
+            signer_acc.clone(),
+            token_prog_acc.clone()
+        ];
+
+        let signer_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
+        solana_program::program::invoke_signed(&withdraw_instruction, &withdraw_accs, &[&signer_seeds])?;
+
+        let withdraw = U64F64::from_num(out_quantity) / mango_group.indexes[out_token_index].deposit;
+        checked_sub_deposit(&mut mango_group, &mut liqee_margin_account, out_token_index, withdraw)?;
+
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
+
+        if coll_ratio >= mango_group.init_coll_ratio {
+            // set margin account to no longer being liquidated
+            liqee_margin_account.being_liquidated = false;
+        }
 
         Ok(())
     }
@@ -1387,8 +1593,8 @@ pub fn get_prices(
     mango_group: &MangoGroup,
     oracle_accs: &[AccountInfo]
 ) -> MangoResult<[U64F64; NUM_TOKENS]> {
-    let mut prices = [U64F64::from_num(0); NUM_TOKENS];
-    prices[NUM_MARKETS] = U64F64::from_num(1);  // quote currency is 1
+    let mut prices = [ZERO_U64F64; NUM_TOKENS];
+    prices[NUM_MARKETS] = ONE_U64F64;  // quote currency is 1
     let quote_decimals: u8 = mango_group.mint_decimals[NUM_MARKETS];
 
     for i in 0..NUM_MARKETS {
@@ -1411,7 +1617,7 @@ pub fn get_prices(
     Ok(prices)
 }
 
-pub fn invoke_settle_funds<'a>(
+fn invoke_settle_funds<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
     open_orders_acc: &AccountInfo<'a>,
@@ -1456,7 +1662,7 @@ pub fn invoke_settle_funds<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
-pub fn invoke_cancel_order<'a>(
+fn invoke_cancel_order<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
     bids_acc: &AccountInfo<'a>,
@@ -1491,4 +1697,79 @@ pub fn invoke_cancel_order<'a>(
         dex_event_queue_acc.clone()
     ];
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
+}
+
+fn cancel_all<'a>(
+    open_orders_acc: &AccountInfo<'a>,
+    dex_prog_acc: &AccountInfo<'a>,
+    spot_market_acc: &AccountInfo<'a>,
+    bids_acc: &AccountInfo<'a>,
+    asks_acc: &AccountInfo<'a>,
+    signer_acc: &AccountInfo<'a>,
+    dex_event_queue_acc: &AccountInfo<'a>,
+    dex_base_acc: &AccountInfo<'a>,
+    dex_quote_acc: &AccountInfo<'a>,
+    base_vault_acc: &AccountInfo<'a>,
+    quote_vault_acc: &AccountInfo<'a>,
+    dex_signer_acc: &AccountInfo<'a>,
+    token_prog_acc: &AccountInfo<'a>,
+    signers_seeds: &[&[&[u8]]],
+
+    mut limit: u32
+) -> MangoResult<()> {
+    let open_orders = load_open_orders(open_orders_acc)?;
+    let mut free_slot_bits = open_orders.free_slot_bits;
+    limit = std::cmp::min(limit, free_slot_bits.count_zeros());
+    if limit == 0 {
+        return Ok(());
+    }
+
+    for j in 0..128 {
+        let slot_is_free = (free_slot_bits & 1u128) != 0;
+        free_slot_bits = free_slot_bits >> 1;
+        if slot_is_free {
+            continue
+        }
+
+        let oid = open_orders.orders[j];
+
+        let cancel_instruction = serum_dex::instruction::MarketInstruction::CancelOrderV2(
+            serum_dex::instruction::CancelOrderInstructionV2 {
+                side: open_orders.slot_side(j as u8).unwrap(),
+                order_id: oid
+            }
+        );
+        invoke_cancel_order(
+            dex_prog_acc,
+            spot_market_acc,
+            bids_acc,
+            asks_acc,
+            open_orders_acc,
+            signer_acc,
+            dex_event_queue_acc,
+            cancel_instruction.pack(),
+            signers_seeds
+        )?;
+
+        limit -= 1;
+        if limit == 0 {
+            break;
+        }
+    }
+
+    invoke_settle_funds(
+        dex_prog_acc,
+        spot_market_acc,
+        open_orders_acc,
+        signer_acc,
+        dex_base_acc,
+        dex_quote_acc,
+        base_vault_acc,
+        quote_vault_acc,
+        dex_signer_acc,
+        token_prog_acc,
+        signers_seeds
+    )?;
+
+    Ok(())
 }

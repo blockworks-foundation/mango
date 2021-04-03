@@ -9,7 +9,7 @@ no-entrypoint = []
 devnet = []
 
 [dependencies]
-solana-program = "=1.5.16"
+solana-program = "~1.5"
 spl-token = { version = "^3.0.0", features=["no-entrypoint"] }
 byteorder = "^1.3.4"
 arrayref = "^0.3.6"
@@ -25,7 +25,8 @@ serum_dex = { version = "^0.2", git = "https://github.com/project-serum/serum-de
 
 num-derive = "^0.3.3"
 flux-aggregator = { version = "^0.1", git = "https://github.com/blockworks-foundation/solana-flux-aggregator.git", features=["program", "no-entrypoint"] }
-fixed = { version = "=0.5.7", features=["serde"] }
+fixed = { version = "1.7.0", features=["serde"] }
+fixed-macro = "1.1.1"
 
 [profile.release]
 lto = true

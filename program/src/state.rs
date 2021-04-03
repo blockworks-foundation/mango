@@ -11,6 +11,8 @@ use solana_program::clock::Clock;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
+use fixed_macro::types::U64F64;
+
 use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
 
 /// Initially launching with BTC/USDT, ETH/USDT
@@ -20,7 +22,14 @@ pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
 pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
-pub const YEAR: u64 = 31536000;
+pub const YEAR: U64F64 = U64F64!(31536000);
+// pub const YEAR: u64 = 31536000;
+const OPTIMAL_UTIL: U64F64 = U64F64!(0.7);
+const OPTIMAL_R: U64F64 = U64F64!(3.17097919837645865e-09);  // 10% APY -> 0.1 / YEAR
+const MAX_R: U64F64 = U64F64!(3.17097919837645865e-08); // max 100% APY -> 1 / YEAR
+pub const ONE_U64F64: U64F64 = U64F64!(1);
+pub const ZERO_U64F64: U64F64 = U64F64!(0);
+pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
 
 macro_rules! prog_assert {
     ($cond:expr) => {
@@ -124,6 +133,8 @@ pub struct MangoGroup {
 }
 impl_loadable!(MangoGroup);
 
+
+
 impl MangoGroup {
     pub fn load_mut_checked<'a>(
         account: &'a AccountInfo,
@@ -158,27 +169,23 @@ impl MangoGroup {
     }
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
-        let optimal_util = U64F64::from_num(0.7);
-        let optimal_r = U64F64::from_num(0.10) / U64F64::from_num(YEAR);  // opt 10%
-        let max_r = U64F64::from_num(1) / U64F64::from_num(YEAR);  // max 100%
         let index: &MangoIndex = &self.indexes[token_index];
         let native_deposits = index.deposit * self.total_deposits[token_index];
         let native_borrows = index.borrow * self.total_borrows[token_index];
         if native_deposits <= native_borrows {  // if deps == 0, this is always true
-            return max_r;  // kind of an error state
+            return MAX_R;  // kind of an error state
         }
 
         let utilization = native_borrows / native_deposits;
-        if utilization > optimal_util {
-            let extra_util = utilization - optimal_util;
-            let slope = (max_r - optimal_r) / (U64F64::from_num(1) - optimal_util);
-            optimal_r + slope * extra_util
+        if utilization > OPTIMAL_UTIL {
+            let extra_util = utilization - OPTIMAL_UTIL;
+            let slope = (MAX_R - OPTIMAL_R) / (ONE_U64F64 - OPTIMAL_UTIL);
+            OPTIMAL_R + slope * extra_util
         } else {
-            let slope = optimal_r / optimal_util;
+            let slope = OPTIMAL_R / OPTIMAL_UTIL;
             slope * utilization
         }
     }
-
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         // TODO verify what happens if total_deposits < total_borrows
         // TODO verify what happens if total_deposits == 0 && total_borrows > 0
@@ -190,7 +197,7 @@ impl MangoGroup {
         for i in 0..NUM_TOKENS {
             let interest_rate = self.get_interest_rate(i);
             let index: &mut MangoIndex = &mut self.indexes[i];
-            if index.last_update == curr_ts || self.total_deposits[i] == U64F64::from_num(0) {
+            if index.last_update == curr_ts || self.total_deposits[i] == ZERO_U64F64 {
                 // TODO is skipping when total_deposits == 0 correct move?
                 continue;
             }
@@ -262,7 +269,8 @@ pub struct MarginAccount {
 
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
 
-    pub padding: [u8; 8] // padding to make compatible with previous MarginAccount size
+    pub being_liquidated: bool,
+    pub padding: [u8; 7] // padding to make compatible with previous MarginAccount size
     // TODO add has_borrows field for easy memcmp fetching
 }
 impl_loadable!(MarginAccount);
@@ -309,7 +317,7 @@ impl MarginAccount {
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
         if liabs > assets {
-            Ok(U64F64::from_num(0))
+            Ok(ZERO_U64F64)
         } else {
             Ok(assets - liabs)
         }
@@ -324,7 +332,7 @@ impl MarginAccount {
         // assets / liabs
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
-        if liabs == U64F64::from_num(0) {
+        if liabs == ZERO_U64F64 {
             Ok(U64F64::MAX)
         } else {
             Ok(assets / liabs)
@@ -372,7 +380,7 @@ impl MarginAccount {
     ) -> MangoResult<U64F64> {
         // TODO weight collateral differently
         // equity = val(deposits) + val(positions) + val(open_orders) - val(borrows)
-        let mut assets: U64F64 = U64F64::from_num(0);
+        let mut assets: U64F64 = ZERO_U64F64;
         for i in 0..NUM_MARKETS {  // Add up all the value in open orders
             // TODO check open orders details
             if *open_orders_accs[i].key == Pubkey::default() {
@@ -401,7 +409,7 @@ impl MarginAccount {
         mango_group: &MangoGroup,
         prices: &[U64F64; NUM_TOKENS],
     ) -> MangoResult<U64F64> {
-        let mut liabs: U64F64 = U64F64::from_num(0);
+        let mut liabs: U64F64 = ZERO_U64F64;
         for i in 0..NUM_TOKENS {
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_borrows = index.borrow * self.borrows[i];
@@ -419,11 +427,29 @@ impl MarginAccount {
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
 
-        if liabs == U64F64::from_num(0) || assets >= liabs * mango_group.init_coll_ratio {
+        if liabs == ZERO_U64F64 || assets >= liabs * mango_group.init_coll_ratio {
             Ok(0)
         } else {
             Ok((liabs * mango_group.init_coll_ratio - assets).to_num())
         }
+    }
+
+    pub fn get_partial_liq_deficit(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+
+        if liabs == ZERO_U64F64 || assets >= liabs * mango_group.init_coll_ratio {
+            Ok(ZERO_U64F64)
+        } else {
+            // TODO make this checked
+            Ok((liabs * mango_group.init_coll_ratio - assets) / (mango_group.init_coll_ratio - PARTIAL_LIQ_INCENTIVE))
+        }
+
     }
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()

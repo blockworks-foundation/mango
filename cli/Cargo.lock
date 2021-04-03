@@ -105,6 +105,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
+name = "az"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "822d7d63e0c0260a050f6b1f0d316f5c79b9eab830aca526ed904e1011bd64ca"
+
+[[package]]
 name = "backtrace"
 version = "0.3.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1068,12 +1074,49 @@ dependencies = [
 
 [[package]]
 name = "fixed"
-version = "0.5.7"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f32ca1abdbb21d63a3e02a658a9e3001b172f13c8b46724299e21190c5ee5041"
+checksum = "b3cd35dc49a38c999fb8bc36a8c8680ad97bf7b9b499d852b1d82e5dd09f73f9"
 dependencies = [
+ "az",
+ "half",
  "serde",
  "typenum",
+]
+
+[[package]]
+name = "fixed-macro"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6b2cae66e4989f93364a38a59a12e1830afe3201c7c11e5ea8727534831fbe"
+dependencies = [
+ "fixed",
+ "fixed-macro-impl",
+ "fixed-macro-types",
+]
+
+[[package]]
+name = "fixed-macro-impl"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "787fa8e0bf88449e84799f4b440a15bd1958c4552a80abc568d5ba9e20a4283e"
+dependencies = [
+ "fixed",
+ "paste 1.0.5",
+ "proc-macro-error",
+ "proc-macro2 1.0.24",
+ "quote 1.0.9",
+ "syn 1.0.60",
+]
+
+[[package]]
+name = "fixed-macro-types"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13c7241f3a037641b460153db21d5611c789e7e0504bf52e20a9b4bbe1d7cc00"
+dependencies = [
+ "fixed",
+ "fixed-macro-impl",
 ]
 
 [[package]]
@@ -1336,6 +1379,12 @@ dependencies = [
  "tracing",
  "tracing-futures",
 ]
+
+[[package]]
+name = "half"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62aca2aba2d62b4a7f5b33f3712cb1b0692779a56fb510499d5c0aa594daeaf3"
 
 [[package]]
 name = "hash32"
@@ -1611,7 +1660,7 @@ checksum = "c502a5ff9dd2924f1ed32ba96e3b65735d837b4bfd978d3161b1702e66aca4b7"
 dependencies = [
  "jemalloc-sys",
  "libc",
- "paste",
+ "paste 0.1.18",
 ]
 
 [[package]]
@@ -1772,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "mango"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "arrayref",
  "bincode",
@@ -1780,6 +1829,7 @@ dependencies = [
  "byteorder",
  "enumflags2",
  "fixed",
+ "fixed-macro",
  "flux-aggregator",
  "num-derive",
  "num_enum",
@@ -2242,6 +2292,12 @@ dependencies = [
  "paste-impl",
  "proc-macro-hack",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acbf547ad0c65e31259204bd90935776d1c693cec2f4ff7abb7a1bbbd40dfe58"
 
 [[package]]
 name = "paste-impl"

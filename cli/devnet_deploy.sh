@@ -8,10 +8,13 @@ fi
 
 # deploy mango program and new mango group
 source ~/mango/cli/devnet.env $KEYPAIR
+solana config set --url $DEVNET_URL
+
 cd ~/mango
 pushd program
 
 # build bpf for devnet (just do cargo build-bpf for the mainnet version
+mkdir target/devnet
 cargo build-bpf --features devnet --bpf-out-dir target/devnet
 
 # this will give a separate program id for devnet
