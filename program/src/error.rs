@@ -1,10 +1,8 @@
-use std::error::Error;
-
+use bytemuck::Contiguous;
 use num_enum::IntoPrimitive;
 use serum_dex::error::DexError;
 use solana_program::program_error::ProgramError;
 use thiserror::Error;
-use bytemuck::Contiguous;
 
 pub type MangoResult<T = ()> = Result<T, MangoError>;
 

@@ -1173,21 +1173,8 @@ impl Processor {
     fn partial_liquidate(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
-        deposit_quantities: [u64; NUM_TOKENS],
         max_deposit: u64
     ) -> MangoResult<()> {
-
-        // Cancel as many orders as possible for the selected market
-        // put account in liquidation mode
-        // if account is_liquidating, then no new orders can be created until account gets above init_coll_ratio
-        //
-
-        // cancel orders,
-        // settle funds
-        // settle borrows
-        // allow liquidations up until the account gets above init collateral ratio
-        // if account hits 0 deposits, socialize losses
-        // offset borrows
 
         const NUM_FIXED: usize = 15;
         // TODO make it so canceling orders feature is optional if no orders outstanding to cancel
@@ -1472,6 +1459,12 @@ impl Processor {
                 msg!("Mango: PlaceAndSettle");
                 Self::place_and_settle(program_id, accounts, order)?;
             }
+            MangoInstruction::PartialLiquidate {
+                max_deposit
+            } => {
+                msg!("Mango: PartialLiquidate");
+                Self::partial_liquidate(program_id, accounts, max_deposit)?;
+            }
         }
         Ok(())
     }
@@ -1618,6 +1611,7 @@ pub fn get_prices(
     Ok(prices)
 }
 
+#[inline(never)]
 fn invoke_settle_funds<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1663,6 +1657,7 @@ fn invoke_settle_funds<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
+#[inline(never)]
 fn invoke_cancel_order<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1700,6 +1695,7 @@ fn invoke_cancel_order<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
+#[inline(never)]
 fn cancel_all<'a>(
     open_orders_acc: &AccountInfo<'a>,
     dex_prog_acc: &AccountInfo<'a>,

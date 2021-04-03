@@ -237,7 +237,6 @@ pub enum MangoInstruction {
     /// 8. `[writable]` open_orders_acc - OpenOrders for the market this order belongs to
     /// 9. `[]` signer_acc - MangoGroup signer key
     /// 10. `[writable]` dex_event_queue_acc - serum dex event queue for this market
-
     CancelOrder {
         order: serum_dex::instruction::CancelOrderInstructionV2
     },
@@ -303,6 +302,34 @@ pub enum MangoInstruction {
         order: serum_dex::instruction::NewOrderInstructionV3
     },
 
+    /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
+    ///
+    /// Accounts expected by this instruction (15 + 2 * NUM_MARKETS + NUM_TOKENS):
+    ///
+    /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
+    /// 1. `[signer]` liqor_acc - liquidator's solana account
+    /// 2. `[writable]` liqor_in_token_acc - liquidator's token account to deposit
+    /// 3. `[writable]` liqor_out_token_acc - liquidator's token account to withdraw into
+    /// 4. `[writable]` liqee_margin_account_acc - MarginAccount of liquidatee
+    /// 5. `[writable]` spot_market_acc
+    /// 6. `[writable]` bids_acc
+    /// 7. `[writable]` asks_acc
+    /// 8. `[]` signer_acc
+    /// 9. `[writable]` dex_event_queue_acc
+    /// 10. `[writable]` dex_base_acc
+    /// 11. `[writable]` dex_quote_acc
+    /// 12. `[]` dex_signer_acc
+    /// 13. `[]` token_prog_acc - SPL token program id
+    /// 14. `[]` clock_acc - Clock sysvar account
+    /// 15..15+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
+    /// 15+NUM_MARKETS..15+2*NUM_MARKETS `[]`
+    ///     oracle_accs - flux aggregator feed accounts
+    /// 15+2*NUM_MARKETS..15+2*NUM_MARKETS+NUM_TOKENS `[writable]`
+    ///     vault_accs - MangoGroup vaults
+    PartialLiquidate {
+        /// Quantity of the token being deposited to repay borrows
+        max_deposit: u64
+    },
 
 }
 
@@ -435,6 +462,12 @@ impl MangoInstruction {
                 let order = unpack_dex_new_order_v3(data_arr)?;
                 MangoInstruction::PlaceAndSettle {
                     order
+                }
+            }
+            15 => {
+                let max_deposit = array_ref![data, 0, 8];
+                MangoInstruction::PartialLiquidate {
+                    max_deposit: u64::from_le_bytes(*max_deposit)
                 }
             }
             _ => { return None; }
@@ -1041,4 +1074,60 @@ pub fn change_borrow_limit(
     })
 }
 
+pub fn partial_liquidate(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    liqor_pk: &Pubkey,
+    liqor_in_token_pk: &Pubkey,
+    liqor_out_token_pk: &Pubkey,
+    liqee_margin_account_acc: &Pubkey,
+    spot_market_pk: &Pubkey,
+    bids_pk: &Pubkey,
+    asks_pk: &Pubkey,
+    signer_pk: &Pubkey,
+    dex_event_queue_pk: &Pubkey,
+    dex_base_pk: &Pubkey,
+    dex_quote_pk: &Pubkey,
+    dex_signer_pk: &Pubkey,
+    open_orders_pks: &[Pubkey],
+    oracle_pks: &[Pubkey],
+    vault_pks: &[Pubkey],
+    max_deposit: u64
+) -> Result<Instruction, ProgramError> {
 
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*liqor_pk, true),
+        AccountMeta::new(*liqor_in_token_pk, false),
+        AccountMeta::new(*liqor_out_token_pk, false),
+        AccountMeta::new(*liqee_margin_account_acc, false),
+        AccountMeta::new(*spot_market_pk, false),
+        AccountMeta::new(*bids_pk, false),
+        AccountMeta::new(*asks_pk, false),
+        AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new(*dex_event_queue_pk, false),
+        AccountMeta::new(*dex_base_pk, false),
+        AccountMeta::new(*dex_quote_pk, false),
+        AccountMeta::new_readonly(*dex_signer_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
+        AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
+    ];
+
+    accounts.extend(open_orders_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+    accounts.extend(oracle_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    accounts.extend(vault_pks.iter().map(
+        |pk| AccountMeta::new(*pk, false))
+    );
+
+    let instr = MangoInstruction::PartialLiquidate { max_deposit };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
