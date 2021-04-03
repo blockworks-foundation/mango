@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
 
 use num_enum::IntoPrimitive;
 use serum_dex::error::DexError;
@@ -18,37 +17,12 @@ pub enum SourceFileId {
     State = 1,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AssertionError {
-    pub line: u16,
-    pub file_id: SourceFileId,
-}
-
-impl Display for AssertionError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let file_name = match self.file_id {
-            SourceFileId::Processor => "src/processor.rs",
-            SourceFileId::State => "src/state.rs"
-        };
-        write!(f, "AssertionError(file: {} line: {})", file_name, self.line)
-    }
-}
-impl Error for AssertionError {}
-
-impl From<AssertionError> for u32 {
-    fn from(err: AssertionError) -> u32 {
-        (err.line as u32) + ((err.file_id as u8 as u32) << 24)
-    }
-}
-
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum MangoError {
     #[error(transparent)]
     ProgramError(#[from] ProgramError),
     #[error("{mango_error_code}; source: {source_file_id}:{line}")]
     MangoErrorCode { mango_error_code: MangoErrorCode, line: u32, source_file_id: SourceFileId},
-    #[error(transparent)]
-    AssertionError(#[from] AssertionError)
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq, IntoPrimitive)]
@@ -96,7 +70,6 @@ impl From<MangoError> for ProgramError {
                 line: _,
                 source_file_id: _
             } => ProgramError::Custom(mango_error_code.into()),
-            MangoError::AssertionError(ae) => ProgramError::Custom(ae.into())
         }
     }
 }
@@ -109,19 +82,7 @@ impl From<DexError> for MangoError {
 }
 
 #[inline]
-pub fn check_assert(cond: bool, line: u16, file_id: SourceFileId) -> MangoResult<()> {
-    if cond {
-        Ok(())
-    } else {
-        Err(MangoError::AssertionError(AssertionError {
-            line,
-            file_id
-        }))
-    }
-}
-
-#[inline]
-pub fn check_assert2(
+pub fn check_assert(
     cond: bool,
     mango_error_code:
     MangoErrorCode,
