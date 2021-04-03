@@ -1611,7 +1611,6 @@ pub fn get_prices(
     Ok(prices)
 }
 
-#[inline(never)]
 fn invoke_settle_funds<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1657,7 +1656,6 @@ fn invoke_settle_funds<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
-#[inline(never)]
 fn invoke_cancel_order<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1695,7 +1693,6 @@ fn invoke_cancel_order<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
-#[inline(never)]
 fn cancel_all<'a>(
     open_orders_acc: &AccountInfo<'a>,
     dex_prog_acc: &AccountInfo<'a>,
