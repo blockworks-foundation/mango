@@ -1,19 +1,26 @@
 use bytemuck::Contiguous;
 use num_enum::IntoPrimitive;
-use serum_dex::error::DexError;
 use solana_program::program_error::ProgramError;
 use thiserror::Error;
 
 pub type MangoResult<T = ()> = Result<T, MangoError>;
 
 #[repr(u8)]
-#[derive(Error, Debug, Clone, Eq, PartialEq, Copy)]
+#[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub enum SourceFileId {
-    #[error("src/processor.rs")]
     Processor = 0,
-    #[error("src/state.rs")]
     State = 1,
 }
+
+impl std::fmt::Display for SourceFileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceFileId::Processor => write!(f, "src/processor.rs"),
+            SourceFileId::State => write!(f, "src/state.rs")
+        }
+    }
+}
+
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum MangoError {
@@ -54,6 +61,8 @@ pub enum MangoErrorCode {
     SignerNecessary,
     #[error("MangoErrorCode::InvalidMangoVault")]
     InvalidMangoVault,
+    #[error("MangoErrorCode::BeingLiquidated The margin account has restricted functionality while being liquidated")]
+    BeingLiquidated,
 
     #[error("MangoErrorCode::Default Check the source code for more info")]
     Default = u32::MAX_VALUE,
@@ -72,8 +81,8 @@ impl From<MangoError> for ProgramError {
     }
 }
 
-impl From<DexError> for MangoError {
-    fn from(de: DexError) -> Self {
+impl From<serum_dex::error::DexError> for MangoError {
+    fn from(de: serum_dex::error::DexError) -> Self {
         let pe: ProgramError = de.into();
         pe.into()
     }

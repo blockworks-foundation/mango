@@ -301,6 +301,10 @@ pub enum MangoInstruction {
     PlaceAndSettle {
         order: serum_dex::instruction::NewOrderInstructionV3
     },
+    /// Allow a liquidator to cancel open orders to recoup funds for liquidation incentive
+    ///
+    /// Accounts expected by this instruction (16 + 2 * NUM_MARKETS):
+    ForceCancelOrders,
 
     /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
     ///
@@ -465,6 +469,9 @@ impl MangoInstruction {
                 }
             }
             15 => {
+                MangoInstruction::ForceCancelOrders
+            }
+            16 => {
                 let max_deposit = array_ref![data, 0, 8];
                 MangoInstruction::PartialLiquidate {
                     max_deposit: u64::from_le_bytes(*max_deposit)
