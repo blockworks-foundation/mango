@@ -21,7 +21,7 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoErrorCode, MangoResult, SourceFileId, MangoError};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, ZERO_U64F64, PARTIAL_LIQ_INCENTIVE};
+use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, ZERO_U64F64, PARTIAL_LIQ_INCENTIVE, DUST_THRESHOLD};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
 
 macro_rules! check_default {
@@ -1441,9 +1441,26 @@ impl Processor {
         if coll_ratio >= mango_group.init_coll_ratio {
             // set margin account to no longer being liquidated
             liqee_margin_account.being_liquidated = false;
+        } else {
+            // if all asset vals is dust (less than 1 cent?) socialize loss on lenders
+            let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
+            // TODO what to do in case account is fully empty but there are still borrows
+            if assets_val < DUST_THRESHOLD {
+                for i in 0..NUM_TOKENS {
+                    let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
+                    if native_borrow > 0 {
+                        socialize_loss(
+                            &mut mango_group,
+                            &mut liqee_margin_account,
+                            i,
+                            U64F64::from_num(native_borrow))?;
+                    }
+                }
+            }
         }
+
+
         // TODO do I need to check total deposits and total borrows?
-        // TODO what to do in case account is fully empty but there are still borrows
 
         Ok(())
     }

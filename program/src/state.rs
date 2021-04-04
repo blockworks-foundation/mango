@@ -30,6 +30,7 @@ const MAX_R: U64F64 = U64F64!(3.17097919837645865e-08); // max 100% APY -> 1 / Y
 pub const ONE_U64F64: U64F64 = U64F64!(1);
 pub const ZERO_U64F64: U64F64 = U64F64!(0);
 pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
+pub const DUST_THRESHOLD: U64F64 = U64F64!(0.01);  // TODO make this part of MangoGroup state
 
 macro_rules! check_default {
     ($cond:expr) => {
