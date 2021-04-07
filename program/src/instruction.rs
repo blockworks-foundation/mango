@@ -329,7 +329,7 @@ pub enum MangoInstruction {
 
     /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
     ///
-    /// Accounts expected by this instruction (9 + 2 * NUM_MARKETS):
+    /// Accounts expected by this instruction (10 + 2 * NUM_MARKETS):
     ///
     /// 0. `[writable]` mango_group_acc - MangoGroup that this margin account is for
     /// 1. `[signer]` liqor_acc - liquidator's solana account
@@ -339,9 +339,10 @@ pub enum MangoInstruction {
     /// 5. `[writable]` in_vault_acc - Mango vault of in_token
     /// 6. `[writable]` out_vault_acc - Mango vault of out_token
     /// 7. `[]` signer_acc
-    /// 8. `[]` clock_acc - Clock sysvar account
-    /// 9..9+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
-    /// 9+NUM_MARKETS..9+2*NUM_MARKETS `[]`
+    /// 8. `[]` token_prog_acc - Token program id
+    /// 9. `[]` clock_acc - Clock sysvar account
+    /// 10..10+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
+    /// 10+NUM_MARKETS..10+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
     PartialLiquidate {
         /// Quantity of the token being deposited to repay borrows
@@ -1174,6 +1175,7 @@ pub fn partial_liquidate(
         AccountMeta::new(*in_vault_pk, false),
         AccountMeta::new(*out_vault_pk, false),
         AccountMeta::new_readonly(*signer_pk, false),
+        AccountMeta::new_readonly(spl_token::ID, false),
         AccountMeta::new_readonly(solana_program::sysvar::clock::ID, false),
     ];
 

@@ -1250,13 +1250,11 @@ impl Processor {
         mango_group.update_indexes(&clock)?;
         let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs
-        )?;
+            &mango_group, &prices, open_orders_accs)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
             if coll_ratio >= mango_group.init_coll_ratio {
-                // TODO do same check in place_and_settle
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
@@ -1267,7 +1265,7 @@ impl Processor {
         let signers_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
 
         invoke_cancel_orders(open_orders_acc, dex_prog_acc, spot_market_acc, bids_acc, asks_acc, signer_acc,
-                             dex_event_queue_acc, &[&signers_seeds], 5)?;
+                             dex_event_queue_acc, &[&signers_seeds], 10)?;
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
@@ -1305,7 +1303,7 @@ impl Processor {
         max_deposit: u64
     ) -> MangoResult<()> {
 
-        const NUM_FIXED: usize = 9;
+        const NUM_FIXED: usize = 10;
         // TODO make it so canceling orders feature is optional if no orders outstanding to cancel
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS];
         let (
@@ -1323,9 +1321,10 @@ impl Processor {
             in_vault_acc,
             out_vault_acc,
             signer_acc,
+            token_prog_acc,
             clock_acc,
         ] = fixed_accs;
-
+        check!(token_prog_acc.key == &spl_token::ID, MangoErrorCode::InvalidProgramId)?;
         check!(liqor_acc.is_signer, MangoErrorCode::SignerNecessary)?;
         let mut mango_group = MangoGroup::load_mut_checked(
             mango_group_acc, program_id
@@ -1421,7 +1420,7 @@ impl Processor {
         // Pull funds from liqor
         let signer_nonce = mango_group.signer_nonce;
         let signers_seeds = gen_signer_seeds(&signer_nonce, mango_group_acc.key);
-        invoke_transfer(liqor_in_token_acc, in_vault_acc, liqor_acc,
+        invoke_transfer(token_prog_acc, liqor_in_token_acc, in_vault_acc, liqor_acc,
                         &[&signers_seeds], in_quantity)?;
         let deposit: U64F64 = U64F64::from_num(in_quantity) / mango_group.indexes[in_token_index].borrow;
         checked_sub_borrow(&mut mango_group, &mut liqee_margin_account, in_token_index, deposit)?;
@@ -1430,7 +1429,7 @@ impl Processor {
         let in_val: U64F64 = U64F64::from_num(in_quantity) * prices[in_token_index];
         let out_val: U64F64 = in_val * PARTIAL_LIQ_INCENTIVE;
         let out_quantity: u64 = (out_val / prices[out_token_index]).checked_floor().unwrap().to_num();
-        invoke_transfer(out_vault_acc, liqor_out_token_acc, signer_acc,
+        invoke_transfer(token_prog_acc, out_vault_acc, liqor_out_token_acc, signer_acc,
                         &[&signers_seeds], out_quantity)?;
 
         let withdraw = U64F64::from_num(out_quantity) / mango_group.indexes[out_token_index].deposit;
@@ -1908,6 +1907,7 @@ fn invoke_cancel_orders<'a>(
 }
 
 fn invoke_transfer<'a>(
+    token_prog_acc: &AccountInfo<'a>,
     source_acc: &AccountInfo<'a>,
     dest_acc: &AccountInfo<'a>,
     authority_acc: &AccountInfo<'a>,
@@ -1924,6 +1924,7 @@ fn invoke_transfer<'a>(
         quantity
     )?;
     let accs = [
+        token_prog_acc.clone(),
         source_acc.clone(),
         dest_acc.clone(),
         authority_acc.clone()
