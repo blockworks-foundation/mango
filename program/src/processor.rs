@@ -6,7 +6,7 @@ use fixed::types::U64F64;
 use fixed_macro::types::U64F64;
 use flux_aggregator::borsh_state::InitBorshState;
 use serum_dex::matching::Side;
-use serum_dex::state::ToAlignedBytes;
+use serum_dex::state::{ToAlignedBytes};
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
@@ -21,8 +21,10 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoErrorCode, MangoResult, SourceFileId, MangoError};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, ZERO_U64F64, PARTIAL_LIQ_INCENTIVE, DUST_THRESHOLD};
+use crate::state::{AccountFlag, check_open_orders, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, ZERO_U64F64, PARTIAL_LIQ_INCENTIVE, DUST_THRESHOLD, load_event_queue_mut};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
+use std::cmp::min;
+use enumflags2::BitFlags;
 
 macro_rules! check_default {
     ($cond:expr) => {
@@ -1265,7 +1267,7 @@ impl Processor {
         let signers_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
 
         invoke_cancel_orders(open_orders_acc, dex_prog_acc, spot_market_acc, bids_acc, asks_acc, signer_acc,
-                             dex_event_queue_acc, &[&signers_seeds], 10)?;
+                             dex_event_queue_acc, &[&signers_seeds], 6)?;
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
@@ -1370,6 +1372,7 @@ impl Processor {
         for i in 0..NUM_TOKENS {
             settle_borrow_full_unchecked(&mut mango_group, &mut liqee_margin_account, i)?;
         }
+
         // Check again to see if account still liquidatable
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
@@ -1388,74 +1391,40 @@ impl Processor {
             // TODO set max orders allowed
         }
 
-        // Now try to liquidate
-        // Calculate maximum possible deposit amount
-        let deficit_val = liqee_margin_account.get_partial_liq_deficit(
-            &mango_group, &prices, open_orders_accs)?;
-
-        let out_withdrawable = liqee_margin_account.get_native_deposit(
-            &mango_group.indexes[out_token_index], out_token_index);
-        let val_out_withdrawable = U64F64::from_num(out_withdrawable)
-            .checked_mul(prices[out_token_index]).unwrap();
-
-        // Can only deposit as much as it is possible to withdraw out_token
-        let max_in_val = val_out_withdrawable / PARTIAL_LIQ_INCENTIVE;
-        let max_in_val = if deficit_val < max_in_val {
-            deficit_val
-        } else {
-            max_in_val
-        };
-
-        // we know prices are not 0; if they are this will error;
-        // TODO price could be very small
-        // TODO verify all the rounding errors
-        let max_in: U64F64 = max_in_val / prices[in_token_index];
-        let max_in_token: u64 = max_in.checked_ceil().unwrap().to_num();
-        let native_borrow = liqee_margin_account.get_native_borrow(
-            &mango_group.indexes[in_token_index], in_token_index);
-        // Can only deposit as much there is borrows to offset in in_token
-        let in_quantity = std::cmp::min(std::cmp::min(max_in_token, native_borrow), max_deposit);
-
-
-        // Pull funds from liqor
+        // Get how much to deposit and how much to withdraw
+        let (in_quantity, out_quantity) = get_in_out_quantities(
+            &mut mango_group, &mut liqee_margin_account, open_orders_accs, &prices, in_token_index,
+            out_token_index, max_deposit
+        )?;
         let signer_nonce = mango_group.signer_nonce;
         let signers_seeds = gen_signer_seeds(&signer_nonce, mango_group_acc.key);
         invoke_transfer(token_prog_acc, liqor_in_token_acc, in_vault_acc, liqor_acc,
                         &[&signers_seeds], in_quantity)?;
-        let deposit: U64F64 = U64F64::from_num(in_quantity) / mango_group.indexes[in_token_index].borrow;
-        checked_sub_borrow(&mut mango_group, &mut liqee_margin_account, in_token_index, deposit)?;
-
-        // Withdraw incentive funds to liqor
-        let in_val: U64F64 = U64F64::from_num(in_quantity) * prices[in_token_index];
-        let out_val: U64F64 = in_val * PARTIAL_LIQ_INCENTIVE;
-        let out_quantity: u64 = (out_val / prices[out_token_index]).checked_floor().unwrap().to_num();
         invoke_transfer(token_prog_acc, out_vault_acc, liqor_out_token_acc, signer_acc,
                         &[&signers_seeds], out_quantity)?;
 
-        let withdraw = U64F64::from_num(out_quantity) / mango_group.indexes[out_token_index].deposit;
-        checked_sub_deposit(&mut mango_group, &mut liqee_margin_account, out_token_index, withdraw)?;
 
+        // Check if account valid now
         let coll_ratio = liqee_margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-
         if coll_ratio >= mango_group.init_coll_ratio {
             // set margin account to no longer being liquidated
             liqee_margin_account.being_liquidated = false;
         } else {
             // if all asset vals is dust (less than 1 cent?) socialize loss on lenders
             let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
-            // TODO what to do in case account is fully empty but there are still borrows
             if assets_val < DUST_THRESHOLD {
                 for i in 0..NUM_TOKENS {
-                    let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
+                    let native_borrow = liqee_margin_account.borrows[i] * mango_group.indexes[i].borrow;
                     if native_borrow > 0 {
                         socialize_loss(
                             &mut mango_group,
                             &mut liqee_margin_account,
                             i,
-                            U64F64::from_num(native_borrow))?;
+                            native_borrow)?;
                     }
                 }
             }
+
         }
 
 
@@ -1817,17 +1786,30 @@ fn invoke_cancel_orders<'a>(
     let mut cancels = vec![];
     {
         let open_orders = load_open_orders(open_orders_acc)?;
-        limit = std::cmp::min(limit, open_orders.free_slot_bits.count_zeros());
+        let event_queue = load_event_queue_mut(dex_event_queue_acc)?;
+        let mut free_slot_bits = open_orders.free_slot_bits;
+        let orders_pk = open_orders_acc.key.to_aligned_bytes();
+        for event in event_queue.iter() {
+            let flags = BitFlags::from_bits(event.event_flags).unwrap();
+            if flags.contains(serum_dex::state::EventFlag::Out) {
+                let owner = event.owner;
+                if orders_pk == owner {
+                    let owner_slot = event.owner_slot;
+                    free_slot_bits |= 1u128 << owner_slot;
+                }
+            }
+        }
+        limit = std::cmp::min(limit, free_slot_bits.count_zeros());
         if limit == 0 {
             return Ok(());
         }
         for j in 0..128 {
             let slot_mask = 1u128 << j;
-            if open_orders.free_slot_bits & slot_mask != 0 {  // means slot is free
+            if free_slot_bits & slot_mask != 0 {  // means slot is free
                 continue;
             }
-
             let order_id = open_orders.orders[j];
+
             let side = if open_orders.is_bid_bits & slot_mask != 0 {
                 serum_dex::matching::Side::Bid
             } else {
@@ -1844,64 +1826,34 @@ fn invoke_cancel_orders<'a>(
         }
     }
 
+    let mut instruction = Instruction {
+        program_id: *dex_prog_acc.key,
+        data: vec![],
+        accounts: vec![
+            AccountMeta::new(*spot_market_acc.key, false),
+            AccountMeta::new(*bids_acc.key, false),
+            AccountMeta::new(*asks_acc.key, false),
+            AccountMeta::new(*open_orders_acc.key, false),
+            AccountMeta::new_readonly(*signer_acc.key, true),
+            AccountMeta::new(*dex_event_queue_acc.key, false),
+        ],
+    };
+
+    let account_infos = [
+        dex_prog_acc.clone(),
+        spot_market_acc.clone(),
+        bids_acc.clone(),
+        asks_acc.clone(),
+        open_orders_acc.clone(),
+        signer_acc.clone(),
+        dex_event_queue_acc.clone()
+    ];
+
     for cancel in cancels.iter() {
         let cancel_instruction = serum_dex::instruction::MarketInstruction::CancelOrderV2(cancel.clone());
-        invoke_cancel_order(
-            dex_prog_acc,
-            spot_market_acc,
-            bids_acc,
-            asks_acc,
-            open_orders_acc,
-            signer_acc,
-            dex_event_queue_acc,
-            cancel_instruction.pack(),
-            signers_seeds
-        )?;
+        instruction.data = cancel_instruction.pack();
+        solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)?;
     }
-
-    // let (free_slot_bits, is_bid_bits, oids) = {
-    //     let open_orders = load_open_orders(open_orders_acc)?;
-    //     (open_orders.free_slot_bits, open_orders.is_bid_bits, open_orders.orders)
-    // };
-    //
-    // limit = std::cmp::min(limit, free_slot_bits.count_zeros());
-    // if limit == 0 {
-    //     return Ok(());
-    // }
-    //
-    // for j in 0..128 {
-    //     let slot_mask = 1u128 << j;
-    //     if free_slot_bits & slot_mask != 0 {  // means slot is free
-    //         continue
-    //     }
-    //
-    //     let order_id = oids[j];
-    //     let side = if is_bid_bits & slot_mask != 0 {
-    //         serum_dex::matching::Side::Bid
-    //     } else {
-    //         serum_dex::matching::Side::Ask
-    //     };
-    //     let cancel_instruction = serum_dex::instruction::MarketInstruction::CancelOrderV2(
-    //         serum_dex::instruction::CancelOrderInstructionV2 { side, order_id }
-    //     );
-    //
-    //     invoke_cancel_order(
-    //         dex_prog_acc,
-    //         spot_market_acc,
-    //         bids_acc,
-    //         asks_acc,
-    //         open_orders_acc,
-    //         signer_acc,
-    //         dex_event_queue_acc,
-    //         cancel_instruction.pack(),
-    //         signers_seeds
-    //     )?;
-    //
-    //     limit -= 1;
-    //     if limit == 0 {
-    //         break;
-    //     }
-    // }
 
     Ok(())
 }
@@ -1932,3 +1884,55 @@ fn invoke_transfer<'a>(
 
     solana_program::program::invoke_signed(&transfer_instruction, &accs, signers_seeds)
 }
+
+fn get_in_out_quantities(
+    mango_group: &mut MangoGroup,
+    margin_account: &mut MarginAccount,
+    open_orders_accs: &[AccountInfo; NUM_MARKETS],
+    prices: &[U64F64; NUM_TOKENS],
+    in_token_index: usize,
+    out_token_index: usize,
+    liqor_max_in: u64
+) -> MangoResult<(u64, u64)> {
+    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)?;
+    let out_avail: U64F64 = margin_account.deposits[out_token_index] * mango_group.indexes[out_token_index].deposit;
+    let out_avail_val = out_avail * prices[out_token_index];
+
+    // liq incentive is max of 1/2 the dist between
+
+    // Can only deposit as much as it is possible to withdraw out_token
+    let max_in_val = out_avail_val / PARTIAL_LIQ_INCENTIVE;
+
+    // msg!("max_in_val: {} | deficit_val: {}", max_in_val, deficit_val);
+    let max_in_val = min(deficit_val, max_in_val);
+
+    // we know prices are not 0; if they are this will error;
+    // TODO verify all the rounding errors
+    let max_in: U64F64 = max_in_val / prices[in_token_index];
+    let native_borrow = margin_account.borrows[in_token_index] * mango_group.indexes[in_token_index].borrow;
+
+    // msg!("max_in: {} | native_borrow: {}", max_in, native_borrow);
+
+
+    // Can only deposit as much there is borrows to offset in in_token
+    let in_quantity = min(min(max_in, native_borrow), U64F64::from_num(liqor_max_in));
+    let deposit: U64F64 = in_quantity / mango_group.indexes[in_token_index].borrow;
+    // msg!("Deposit: {} | Borrowed: {}", deposit, margin_account.borrows[in_token_index]);
+    // if borrowed is close to Deposit, just set borrowed == 0
+    checked_sub_borrow(mango_group, margin_account, in_token_index, deposit)?;
+
+    // Withdraw incentive funds to liqor
+    let in_val: U64F64 = in_quantity * prices[in_token_index];
+    let out_val: U64F64 = in_val * PARTIAL_LIQ_INCENTIVE;
+    let out_quantity: U64F64 = out_val / prices[out_token_index];
+
+    let withdraw = out_quantity / mango_group.indexes[out_token_index].deposit;
+    // msg!("Withdraw: {} | Available: {}", withdraw, margin_account.deposits[out_token_index]);
+
+    checked_sub_deposit(mango_group, margin_account, out_token_index, withdraw)?;
+
+    // TODO account for the rounded amounts as deposits -- could be valuable in some tokens
+
+    Ok((in_quantity.checked_ceil().unwrap().to_num(), out_quantity.checked_floor().unwrap().to_num()))
+}
+

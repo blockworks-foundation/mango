@@ -26,7 +26,7 @@ impl std::fmt::Display for SourceFileId {
 pub enum MangoError {
     #[error(transparent)]
     ProgramError(#[from] ProgramError),
-    #[error("{mango_error_code}; source: {source_file_id}:{line}")]
+    #[error("{mango_error_code}; {source_file_id}:{line}")]
     MangoErrorCode { mango_error_code: MangoErrorCode, line: u32, source_file_id: SourceFileId},
 }
 

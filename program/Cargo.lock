@@ -346,7 +346,7 @@ dependencies = [
 [[package]]
 name = "flux-aggregator"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-flux-aggregator.git#19198bb59a35f2f25412ec9c1e28e157d1c50bb1"
+source = "git+https://github.com/blockworks-foundation/solana-flux-aggregator.git#8b805a496110de9335df59db83e6fb6f7ed9414d"
 dependencies = [
  "borsh 0.7.2",
  "borsh-derive 0.7.2",
@@ -443,9 +443,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.92"
+version = "0.2.93"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56d855069fafbb9b344c0f962150cd2c1187975cb1c22c1522c240d8c4986714"
+checksum = "9385f66bf6105b241aa65a61cb923ef20efc665cb9f9bb50ac2f0c4b7f378d41"
 
 [[package]]
 name = "log"
@@ -776,7 +776,7 @@ dependencies = [
 [[package]]
 name = "serum_dex"
 version = "0.2.0"
-source = "git+https://github.com/project-serum/serum-dex.git#e264db2c9cc326f246a8fb108becb7d71bba3e72"
+source = "git+https://github.com/blockworks-foundation/serum-dex.git#544f6a20b4325eae2e1eddd0ef04ddd819e2db8f"
 dependencies = [
  "arrayref",
  "bincode",
@@ -811,9 +811,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi"
-version = "1.6.3"
+version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3960501855c86deff7b846cb2398ad1f6d375f4b69700a8b227a7d7973db18c"
+checksum = "f81ac3925c8995d935d3af27390cf7b748a81837a29feb75a00e115f40dae6dc"
 dependencies = [
  "bs58",
  "bv",
@@ -831,9 +831,9 @@ dependencies = [
 
 [[package]]
 name = "solana-frozen-abi-macro"
-version = "1.6.3"
+version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e80259d94cebfe38e1eff976900ad3fc1c91e9b7c72c8c2fa123f6ea259a99f0"
+checksum = "ae448159038e470f3b2dd1ab0d219246211f940a10bf1e656a02cb5c2d897437"
 dependencies = [
  "lazy_static",
  "proc-macro2",
@@ -844,9 +844,9 @@ dependencies = [
 
 [[package]]
 name = "solana-logger"
-version = "1.6.3"
+version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc65a5c5e7446c2ac77a3fd31fb80158daa76e9f48512e7909660a8af1b71cad"
+checksum = "7fa7bddd7b89c26c6e3ef4af9b47d6bc8d60888559affb5160f5ade18c0cd058"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -855,9 +855,9 @@ dependencies = [
 
 [[package]]
 name = "solana-program"
-version = "1.6.3"
+version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c01edd2ce0ca37499bea84569b064d99ce37e883a636a8639bc73b722eb1e6b"
+checksum = "231bf4cd42997b6f34e7c74a1449e8a1e8816fd83662fc3a5a0922da48fc667b"
 dependencies = [
  "bincode",
  "borsh 0.8.2",
@@ -887,9 +887,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk-macro"
-version = "1.6.3"
+version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae3e3cc2e6c8c5c8ecf44e060f0347ad7a1ab0c6f8338a4a5d3afa575b36e68b"
+checksum = "3c805f1e32677f8ec0cc0b2f470833a0d5ab0922f068e52be3a4a93b468c9c70"
 dependencies = [
  "bs58",
  "proc-macro2",

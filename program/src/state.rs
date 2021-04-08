@@ -592,6 +592,23 @@ fn strip_data_header_mut<'a, H: Pod, D: Pod>(
     Ok((header, inner))
 }
 
+#[allow(dead_code)]
+fn strip_data_header<'a, H: Pod, D: Pod>(
+    orig_data: Ref<'a, [u8]>,
+) -> MangoResult<(Ref<'a, H>, Ref<'a, [D]>)> {
+    let (header, inner): (Ref<'a, [H]>, Ref<'a, [D]>) =
+        Ref::map_split(orig_data, |data| {
+
+            let (header_bytes, inner_bytes) = data.split_at(size_of::<H>());
+            let header: &H;
+            let inner: &[D];
+            header = try_from_bytes(header_bytes).unwrap();
+            inner = remove_slop(inner_bytes);
+            (std::slice::from_ref(header), inner)
+        });
+    let header = Ref::map(header, |s| s.first().unwrap_or_else(|| unreachable!()));
+    Ok((header, inner))
+}
 
 fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> MangoResult<Ref<'a, [u8]>> {
     check_default!(acc.data_len() >= 12)?;
@@ -682,5 +699,16 @@ pub fn load_market_state<'a>(
 
     state.check_flags()?;
     Ok(state)
+}
 
+
+pub fn load_event_queue_mut<'a>(
+    queue_acc: &'a AccountInfo
+) -> MangoResult<serum_dex::state::EventQueue<'a>> {
+
+    let orig_data = strip_dex_padding_mut(queue_acc)?;
+    let (header, buf) = strip_data_header_mut::<serum_dex::state::EventQueueHeader, serum_dex::state::Event>(orig_data)?;
+
+
+    Ok(serum_dex::state::Queue { header, buf })
 }
