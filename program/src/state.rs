@@ -23,7 +23,6 @@ pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
 pub const YEAR: U64F64 = U64F64!(31536000);
-// pub const YEAR: u64 = 31536000;
 const OPTIMAL_UTIL: U64F64 = U64F64!(0.7);
 const OPTIMAL_R: U64F64 = U64F64!(3.17097919837645865e-09);  // 10% APY -> 0.1 / YEAR
 const MAX_R: U64F64 = U64F64!(3.17097919837645865e-08); // max 100% APY -> 1 / YEAR
@@ -523,7 +522,6 @@ fn remove_slop<T: Pod>(bytes: &[u8]) -> &[T] {
 
 
 #[inline]
-#[allow(dead_code)]
 fn remove_slop_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
     let slop = bytes.len() % size_of::<T>();
     let new_len = bytes.len() - slop;

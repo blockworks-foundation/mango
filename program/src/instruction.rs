@@ -325,7 +325,11 @@ pub enum MangoInstruction {
     /// 16..16+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
     /// 16+NUM_MARKETS..16+2*NUM_MARKETS `[]`
     ///     oracle_accs - flux aggregator feed accounts
-    ForceCancelOrders,
+    ForceCancelOrders {
+        /// Max orders to cancel -- could be useful to lower this if running into compute limits
+        /// Recommended: 5
+        limit: u8
+    },
 
     /// Take over a MarginAccount that is below init_coll_ratio by depositing funds
     ///
@@ -483,7 +487,10 @@ impl MangoInstruction {
                 }
             }
             15 => {
-                MangoInstruction::ForceCancelOrders
+                let limit = array_ref![data, 0, 1];
+                MangoInstruction::ForceCancelOrders {
+                    limit: u8::from_le_bytes(*limit)
+                }
             }
             16 => {
                 let max_deposit = array_ref![data, 0, 8];
@@ -1112,7 +1119,8 @@ pub fn force_cancel_orders(
     dex_signer_pk: &Pubkey,
     dex_prog_id: &Pubkey,
     open_orders_pks: &[Pubkey],
-    oracle_pks: &[Pubkey]
+    oracle_pks: &[Pubkey],
+    limit: u8
 ) -> Result<Instruction, ProgramError> {
 
     let mut accounts = vec![
@@ -1141,7 +1149,7 @@ pub fn force_cancel_orders(
         |pk| AccountMeta::new_readonly(*pk, false))
     );
 
-    let instr = MangoInstruction::ForceCancelOrders;
+    let instr = MangoInstruction::ForceCancelOrders { limit };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,

@@ -15,7 +15,7 @@ pushd program
 
 # build bpf for devnet (just do cargo build-bpf for the mainnet version
 mkdir target/devnet
-cargo build-bpf --features devnet --bpf-out-dir target/devnet || exit
+cargo build-bpf --features devnet --bpf-out-dir target/devnet
 
 # this will give a separate program id for devnet
 #solana-keygen new --outfile target/devnet/mango-dev.json
