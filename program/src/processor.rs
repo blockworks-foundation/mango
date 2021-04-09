@@ -695,8 +695,6 @@ impl Processor {
         accounts: &[AccountInfo],
         order: serum_dex::instruction::NewOrderInstructionV3
     ) -> MangoResult<()> {
-        // TODO disallow limit prices that would put account below initCollRatio
-
         const NUM_FIXED: usize = 17;
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS];
         let (

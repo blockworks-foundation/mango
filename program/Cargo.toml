@@ -1,6 +1,6 @@
 [package]
 name = "mango"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["blockworks"]
 edition = "2018"
 
@@ -9,7 +9,7 @@ no-entrypoint = []
 devnet = []
 
 [dependencies]
-solana-program = "^1.6.3"
+solana-program = "^1.6.4"
 spl-token = { version = "^3.0.0", features=["no-entrypoint"] }
 byteorder = "^1.3.4"
 arrayref = "^0.3.6"
