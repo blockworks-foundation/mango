@@ -5,16 +5,14 @@ use std::mem::size_of;
 use std::str::FromStr;
 
 use anyhow::Result;
-use arrayref::array_ref;
 use clap::Clap;
 use common::{Cluster, convert_assertion_error, create_account_rent_exempt, create_signer_key_and_nonce, create_token_account, read_keypair_file, send_instructions};
 use fixed::types::U64F64;
-use mango::processor::get_prices;
-use mango::state::{Loadable, MangoGroup, MarginAccount, NUM_MARKETS, NUM_TOKENS};
+use mango::state::{Loadable, MangoGroup, MarginAccount, NUM_TOKENS};
 use serde_json::{json, Value};
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_request::TokenAccountsFilter;
-use solana_sdk::account::{Account, create_account_infos};
+use solana_sdk::account::{Account};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
@@ -127,15 +125,6 @@ pub enum Command {
     CancelOrder {
 
     },
-    PrintMarginAccountInfo {
-        #[clap(long, short)]
-        ids_path: String,
-        #[clap(long)]
-        mango_group_name: String,
-        #[clap(long)]
-        margin_account: String
-    },
-
     ChangeBorrowLimit {
         #[clap(long, short)]
         payer: String,  // assumes for now payer is same as admin
@@ -157,7 +146,7 @@ impl Opts {
     }
 }
 
-
+#[allow(unused)]
 fn get_accounts(client: &RpcClient, pks: &[Pubkey]) -> Vec<(Pubkey, Account)> {
     client.get_multiple_accounts(pks)
         .unwrap()
@@ -601,60 +590,6 @@ pub fn start(opts: Opts) -> Result<()> {
                     write!(&mut f, "{}", keypair.to_base58_string())?;
                 }
             }
-        }
-
-        Command::PrintMarginAccountInfo {
-            ids_path,
-            mango_group_name,
-            margin_account
-        } => {
-            println!("PrintMarginAccountInfo");
-            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
-            let cluster_name = opts.cluster.name();
-            let cluster_ids = &ids[cluster_name];
-            let cids = ClusterIds::load(cluster_ids);
-            let margin_account_pk = Pubkey::from_str(margin_account.as_str())?;
-            let margin_account = client.get_account(&margin_account_pk)?;
-            let margin_account = MarginAccount::load_from_bytes(margin_account.data.as_slice())?;
-
-            let mgids = &cids.mango_groups[&mango_group_name];
-            let mango_group_acc = client.get_account(&mgids.mango_group_pk)?;
-            let mango_group = MangoGroup::load_from_bytes(mango_group_acc.data.as_slice())?;
-            let tokens: Vec<&str> = mango_group_name.split("_").collect();
-
-
-            let mut oracle_accs = get_accounts(&client, &mgids.oracle_pks);
-            let oracle_accs = create_account_infos(oracle_accs.as_mut_slice());
-            let oracle_accs = array_ref![oracle_accs.as_slice(), 0, NUM_MARKETS];
-
-            let mut open_orders_accs = get_accounts(&client, &margin_account.open_orders);
-            let open_orders_accs = create_account_infos(open_orders_accs.as_mut_slice());
-            let open_orders_accs = array_ref![open_orders_accs.as_slice(), 0, NUM_MARKETS];
-
-            let prices = get_prices(mango_group, oracle_accs)?;
-
-            let equity = margin_account.get_equity(mango_group, &prices, open_orders_accs)?;
-            println!("MarginAccount: {} | equity: {}", margin_account_pk, equity);
-            println!("deposits");
-            for i in 0..NUM_TOKENS {
-                println!("{} {}", tokens[i], margin_account.deposits[i] * mango_group.indexes[i].deposit);
-            }
-
-            // println!("positions");
-            // for i in 0..NUM_TOKENS {
-            //     println!("{} {}", tokens[i], margin_account.positions[i]);
-            // }
-
-            println!("borrows");
-            for i in 0..NUM_TOKENS {
-                println!("{} {}", tokens[i], margin_account.borrows[i] * mango_group.indexes[i].borrow);
-            }
-
-            // total value in quote currency
-            // deposits
-            // positions
-            // borrows
-            // val in open orders
         }
         Command::SettleBorrow {
             payer,

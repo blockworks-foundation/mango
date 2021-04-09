@@ -11,7 +11,9 @@ use solana_program::clock::Clock;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-use crate::error::{AssertionError, check_assert, MangoResult, SourceFileId};
+use fixed_macro::types::U64F64;
+
+use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, MangoError};
 
 /// Initially launching with BTC/USDT, ETH/USDT
 pub const NUM_TOKENS: usize = 3;
@@ -20,24 +22,32 @@ pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
 pub const MINUTE: u64 = 60;
 pub const HOUR: u64 = 3600;
 pub const DAY: u64 = 86400;
-pub const YEAR: u64 = 31536000;
+pub const YEAR: U64F64 = U64F64!(31536000);
+const OPTIMAL_UTIL: U64F64 = U64F64!(0.7);
+const OPTIMAL_R: U64F64 = U64F64!(3.17097919837645865e-09);  // 10% APY -> 0.1 / YEAR
+const MAX_R: U64F64 = U64F64!(3.17097919837645865e-08); // max 100% APY -> 1 / YEAR
+pub const ONE_U64F64: U64F64 = U64F64!(1);
+pub const ZERO_U64F64: U64F64 = U64F64!(0);
+pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
+pub const DUST_THRESHOLD: U64F64 = U64F64!(0.01);  // TODO make this part of MangoGroup state
 
-macro_rules! prog_assert {
+macro_rules! check_default {
     ($cond:expr) => {
-        check_assert($cond, line!() as u16, SourceFileId::State)
+        check_assert($cond, MangoErrorCode::Default, line!(), SourceFileId::State)
     }
 }
-macro_rules! prog_assert_eq {
+macro_rules! check_eq_default {
     ($x:expr, $y:expr) => {
-        check_assert($x == $y, line!() as u16, SourceFileId::State)
+        check_assert($x == $y, MangoErrorCode::Default, line!(), SourceFileId::State)
     }
 }
 
 macro_rules! throw {
     () => {
-        AssertionError {
-            line: line!() as u16,
-            file_id: SourceFileId::State
+        MangoError::MangoErrorCode {
+            mango_error_code: MangoErrorCode::Default,
+            line: line!(),
+            source_file_id: SourceFileId::State
         }
     }
 }
@@ -124,17 +134,19 @@ pub struct MangoGroup {
 }
 impl_loadable!(MangoGroup);
 
+
+
 impl MangoGroup {
     pub fn load_mut_checked<'a>(
         account: &'a AccountInfo,
         program_id: &Pubkey
     ) -> MangoResult<RefMut<'a, Self>> {
 
-        prog_assert_eq!(account.data_len(), size_of::<Self>())?;
-        prog_assert_eq!(account.owner, program_id)?;
+        check_eq_default!(account.data_len(), size_of::<Self>())?;
+        check_eq_default!(account.owner, program_id)?;
 
         let mango_group = Self::load_mut(account)?;
-        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+        check_eq_default!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
 
         Ok(mango_group)
     }
@@ -142,11 +154,11 @@ impl MangoGroup {
         account: &'a AccountInfo,
         program_id: &Pubkey
     ) -> MangoResult<Ref<'a, Self>> {
-        prog_assert_eq!(account.data_len(), size_of::<Self>())?;  // TODO not necessary check
-        prog_assert_eq!(account.owner, program_id)?;
+        check_eq_default!(account.data_len(), size_of::<Self>())?;  // TODO not necessary check
+        check_eq_default!(account.owner, program_id)?;
 
         let mango_group = Self::load(account)?;
-        prog_assert_eq!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
+        check_eq_default!(mango_group.account_flags, (AccountFlag::Initialized | AccountFlag::MangoGroup).bits())?;
 
         Ok(mango_group)
     }
@@ -158,27 +170,23 @@ impl MangoGroup {
     }
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
-        let optimal_util = U64F64::from_num(0.7);
-        let optimal_r = U64F64::from_num(0.10) / U64F64::from_num(YEAR);  // opt 10%
-        let max_r = U64F64::from_num(1) / U64F64::from_num(YEAR);  // max 100%
         let index: &MangoIndex = &self.indexes[token_index];
         let native_deposits = index.deposit * self.total_deposits[token_index];
         let native_borrows = index.borrow * self.total_borrows[token_index];
         if native_deposits <= native_borrows {  // if deps == 0, this is always true
-            return max_r;  // kind of an error state
+            return MAX_R;  // kind of an error state
         }
 
         let utilization = native_borrows / native_deposits;
-        if utilization > optimal_util {
-            let extra_util = utilization - optimal_util;
-            let slope = (max_r - optimal_r) / (U64F64::from_num(1) - optimal_util);
-            optimal_r + slope * extra_util
+        if utilization > OPTIMAL_UTIL {
+            let extra_util = utilization - OPTIMAL_UTIL;
+            let slope = (MAX_R - OPTIMAL_R) / (ONE_U64F64 - OPTIMAL_UTIL);
+            OPTIMAL_R + slope * extra_util
         } else {
-            let slope = optimal_r / optimal_util;
+            let slope = OPTIMAL_R / OPTIMAL_UTIL;
             slope * utilization
         }
     }
-
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         // TODO verify what happens if total_deposits < total_borrows
         // TODO verify what happens if total_deposits == 0 && total_borrows > 0
@@ -190,7 +198,7 @@ impl MangoGroup {
         for i in 0..NUM_TOKENS {
             let interest_rate = self.get_interest_rate(i);
             let index: &mut MangoIndex = &mut self.indexes[i];
-            if index.last_update == curr_ts || self.total_deposits[i] == U64F64::from_num(0) {
+            if index.last_update == curr_ts || self.total_deposits[i] == ZERO_U64F64 {
                 // TODO is skipping when total_deposits == 0 correct move?
                 continue;
             }
@@ -198,7 +206,7 @@ impl MangoGroup {
             let native_deposits: U64F64 = self.total_deposits[i] * index.deposit;
             let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
             let epsilon = U64F64::from_bits(1u128) * 100;
-            prog_assert!(native_borrows <= native_deposits + epsilon)?;  // to account for rounding errors
+            check_default!(native_borrows <= native_deposits + epsilon)?;  // to account for rounding errors
 
             let utilization = native_borrows.checked_div(native_deposits).unwrap();
             let borrow_interest = interest_rate
@@ -262,7 +270,8 @@ pub struct MarginAccount {
 
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
 
-    pub padding: [u8; 8] // padding to make compatible with previous MarginAccount size
+    pub being_liquidated: bool,
+    pub padding: [u8; 7] // padding to make compatible with previous MarginAccount size
     // TODO add has_borrows field for easy memcmp fetching
 }
 impl_loadable!(MarginAccount);
@@ -273,13 +282,13 @@ impl MarginAccount {
         account: &'a AccountInfo,
         mango_group_pk: &Pubkey
     ) -> MangoResult<RefMut<'a, Self>> {
-        prog_assert_eq!(account.owner, program_id)?;  // this is probably not necessary
-        prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
+        check_eq_default!(account.owner, program_id)?;  // this is probably not necessary
+        check_eq_default!(account.data_len(), size_of::<MarginAccount>())?;
 
         let margin_account = Self::load_mut(account)?;
-        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        check_eq_default!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
         // prog_assert_eq!(&margin_account.owner, owner_pk)?; // not necessary
-        prog_assert_eq!(&margin_account.mango_group, mango_group_pk)?;
+        check_eq_default!(&margin_account.mango_group, mango_group_pk)?;
 
         Ok(margin_account)
     }
@@ -288,13 +297,13 @@ impl MarginAccount {
         account: &'a AccountInfo,
         mango_group_pk: &Pubkey
     ) -> MangoResult<Ref<'a, Self>> {
-        prog_assert_eq!(account.owner, program_id)?;  // This is probably not necessary
-        prog_assert_eq!(account.data_len(), size_of::<MarginAccount>())?;
+        check_eq_default!(account.owner, program_id)?;  // This is probably not necessary
+        check_eq_default!(account.data_len(), size_of::<MarginAccount>())?;
 
         let margin_account = Self::load(account)?;
-        prog_assert_eq!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
+        check_eq_default!(margin_account.account_flags, (AccountFlag::Initialized | AccountFlag::MarginAccount).bits())?;
         // prog_assert_eq!(&margin_account.owner, owner_pk)?;  // not necessary
-        prog_assert_eq!(&margin_account.mango_group, mango_group_pk)?;
+        check_eq_default!(&margin_account.mango_group, mango_group_pk)?;
 
         Ok(margin_account)
     }
@@ -309,7 +318,7 @@ impl MarginAccount {
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
         if liabs > assets {
-            Ok(U64F64::from_num(0))
+            Ok(ZERO_U64F64)
         } else {
             Ok(assets - liabs)
         }
@@ -324,7 +333,7 @@ impl MarginAccount {
         // assets / liabs
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
-        if liabs == U64F64::from_num(0) {
+        if liabs == ZERO_U64F64 {
             Ok(U64F64::MAX)
         } else {
             Ok(assets / liabs)
@@ -372,7 +381,7 @@ impl MarginAccount {
     ) -> MangoResult<U64F64> {
         // TODO weight collateral differently
         // equity = val(deposits) + val(positions) + val(open_orders) - val(borrows)
-        let mut assets: U64F64 = U64F64::from_num(0);
+        let mut assets: U64F64 = ZERO_U64F64;
         for i in 0..NUM_MARKETS {  // Add up all the value in open orders
             // TODO check open orders details
             if *open_orders_accs[i].key == Pubkey::default() {
@@ -401,7 +410,7 @@ impl MarginAccount {
         mango_group: &MangoGroup,
         prices: &[U64F64; NUM_TOKENS],
     ) -> MangoResult<U64F64> {
-        let mut liabs: U64F64 = U64F64::from_num(0);
+        let mut liabs: U64F64 = ZERO_U64F64;
         for i in 0..NUM_TOKENS {
             let index: &MangoIndex = &mango_group.indexes[i];
             let native_borrows = index.borrow * self.borrows[i];
@@ -419,11 +428,29 @@ impl MarginAccount {
         let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
         let liabs = self.get_liabs_val(mango_group, prices)?;
 
-        if liabs == U64F64::from_num(0) || assets >= liabs * mango_group.init_coll_ratio {
+        if liabs == ZERO_U64F64 || assets >= liabs * mango_group.init_coll_ratio {
             Ok(0)
         } else {
             Ok((liabs * mango_group.init_coll_ratio - assets).to_num())
         }
+    }
+
+    pub fn get_partial_liq_deficit(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
+        let assets = self.get_assets_val(mango_group, prices, open_orders_accs)?;
+        let liabs = self.get_liabs_val(mango_group, prices)?;
+
+        if liabs == ZERO_U64F64 || assets >= liabs * mango_group.init_coll_ratio {
+            Ok(ZERO_U64F64)
+        } else {
+            // TODO make this checked
+            Ok((liabs * mango_group.init_coll_ratio - assets) / (mango_group.init_coll_ratio - PARTIAL_LIQ_INCENTIVE))
+        }
+
     }
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()
@@ -464,11 +491,11 @@ impl MangoSrmAccount {
         account: &'a AccountInfo,
         mango_group_pk: &Pubkey
     ) -> MangoResult<RefMut<'a, Self>> {
-        prog_assert_eq!(account.owner, program_id)?;
-        prog_assert_eq!(account.data_len(), size_of::<MangoSrmAccount>())?;
+        check_eq_default!(account.owner, program_id)?;
+        check_eq_default!(account.data_len(), size_of::<MangoSrmAccount>())?;
         let srm_account = Self::load_mut(account)?;
-        prog_assert_eq!(srm_account.account_flags, (AccountFlag::Initialized | AccountFlag::MangoSrmAccount).bits())?;
-        prog_assert_eq!(&srm_account.mango_group, mango_group_pk)?;
+        check_eq_default!(srm_account.account_flags, (AccountFlag::Initialized | AccountFlag::MangoSrmAccount).bits())?;
+        check_eq_default!(&srm_account.mango_group, mango_group_pk)?;
 
         Ok(srm_account)
     }
@@ -495,7 +522,6 @@ fn remove_slop<T: Pod>(bytes: &[u8]) -> &[T] {
 
 
 #[inline]
-#[allow(dead_code)]
 fn remove_slop_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
     let slop = bytes.len() % size_of::<T>();
     let new_len = bytes.len() - slop;
@@ -564,9 +590,26 @@ fn strip_data_header_mut<'a, H: Pod, D: Pod>(
     Ok((header, inner))
 }
 
+#[allow(dead_code)]
+fn strip_data_header<'a, H: Pod, D: Pod>(
+    orig_data: Ref<'a, [u8]>,
+) -> MangoResult<(Ref<'a, H>, Ref<'a, [D]>)> {
+    let (header, inner): (Ref<'a, [H]>, Ref<'a, [D]>) =
+        Ref::map_split(orig_data, |data| {
+
+            let (header_bytes, inner_bytes) = data.split_at(size_of::<H>());
+            let header: &H;
+            let inner: &[D];
+            header = try_from_bytes(header_bytes).unwrap();
+            inner = remove_slop(inner_bytes);
+            (std::slice::from_ref(header), inner)
+        });
+    let header = Ref::map(header, |s| s.first().unwrap_or_else(|| unreachable!()));
+    Ok((header, inner))
+}
 
 fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> MangoResult<Ref<'a, [u8]>> {
-    prog_assert!(acc.data_len() >= 12)?;
+    check_default!(acc.data_len() >= 12)?;
     let unpadded_data: Ref<[u8]> = Ref::map(acc.try_borrow_data()?, |data| {
         let data_len = data.len() - 12;
         let (_, rest) = data.split_at(5);
@@ -577,7 +620,7 @@ fn strip_dex_padding<'a>(acc: &'a AccountInfo) -> MangoResult<Ref<'a, [u8]>> {
 }
 
 fn strip_dex_padding_mut<'a>(acc: &'a AccountInfo) -> MangoResult<RefMut<'a, [u8]>> {
-    prog_assert!(acc.data_len() >= 12)?;
+    check_default!(acc.data_len() >= 12)?;
     let unpadded_data: RefMut<[u8]> = RefMut::map(acc.try_borrow_mut_data()?, |data| {
         let data_len = data.len() - 12;
         let (_, rest) = data.split_at_mut(5);
@@ -592,12 +635,12 @@ pub fn load_bids_mut<'a>(
     sm: &RefMut<serum_dex::state::MarketState>,
     bids: &'a AccountInfo
 ) -> MangoResult<RefMut<'a, serum_dex::critbit::Slab>> {
-    prog_assert_eq!(&bids.key.to_aligned_bytes(), &identity(sm.bids))?;
+    check_eq_default!(&bids.key.to_aligned_bytes(), &identity(sm.bids))?;
 
     let orig_data = strip_dex_padding_mut(bids)?;
     let (header, buf) = strip_data_header_mut::<OrderBookStateHeader, u8>(orig_data)?;
     let flags = BitFlags::from_bits(header.account_flags).unwrap();
-    prog_assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Bids))?;
+    check_default!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Bids))?;
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
@@ -605,11 +648,11 @@ pub fn load_asks_mut<'a>(
     sm: &RefMut<serum_dex::state::MarketState>,
     asks: &'a AccountInfo
 ) -> MangoResult<RefMut<'a, serum_dex::critbit::Slab>> {
-    prog_assert_eq!(&asks.key.to_aligned_bytes(), &identity(sm.asks))?;
+    check_eq_default!(&asks.key.to_aligned_bytes(), &identity(sm.asks))?;
     let orig_data = strip_dex_padding_mut(asks)?;
     let (header, buf) = strip_data_header_mut::<OrderBookStateHeader, u8>(orig_data)?;
     let flags = BitFlags::from_bits(header.account_flags).unwrap();
-    prog_assert!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Asks))?;
+    check_default!(&flags == &(serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::Asks))?;
     Ok(RefMut::map(buf, serum_dex::critbit::Slab::new))
 }
 
@@ -630,9 +673,9 @@ pub fn check_open_orders(
     // if it's not default, it must be initialized
     let open_orders = load_open_orders(acc)?;
     let valid_flags = (serum_dex::state::AccountFlag::Initialized | serum_dex::state::AccountFlag::OpenOrders).bits();
-    prog_assert_eq!(open_orders.account_flags, valid_flags)?;
+    check_eq_default!(open_orders.account_flags, valid_flags)?;
     let oos_owner = open_orders.owner;
-    prog_assert_eq!(oos_owner, owner.to_aligned_bytes())?;
+    check_eq_default!(oos_owner, owner.to_aligned_bytes())?;
 
     Ok(())
 }
@@ -642,7 +685,7 @@ pub fn load_market_state<'a>(
     market_account: &'a AccountInfo,
     program_id: &Pubkey,
 ) -> MangoResult<RefMut<'a, serum_dex::state::MarketState>> {
-    prog_assert_eq!(market_account.owner, program_id)?;
+    check_eq_default!(market_account.owner, program_id)?;
 
     let state: RefMut<'a, serum_dex::state::MarketState>;
     state = RefMut::map(market_account.try_borrow_mut_data()?, |data| {
@@ -654,5 +697,16 @@ pub fn load_market_state<'a>(
 
     state.check_flags()?;
     Ok(state)
+}
 
+
+pub fn load_event_queue_mut<'a>(
+    queue_acc: &'a AccountInfo
+) -> MangoResult<serum_dex::state::EventQueue<'a>> {
+
+    let orig_data = strip_dex_padding_mut(queue_acc)?;
+    let (header, buf) = strip_data_header_mut::<serum_dex::state::EventQueueHeader, serum_dex::state::Event>(orig_data)?;
+
+
+    Ok(serum_dex::state::Queue { header, buf })
 }

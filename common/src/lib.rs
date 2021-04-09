@@ -265,7 +265,7 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     //     }
     //
     // )?)
-
+    client.get
     let txid = client.send_transaction_with_config(txn, RpcSendTransactionConfig {
         skip_preflight: true,
         ..RpcSendTransactionConfig::default()
@@ -404,6 +404,7 @@ pub fn send_instructions(
     payer_pk: &Pubkey
 ) -> Result<()> {
     let (recent_hash, _fee_calc) = client.get_recent_blockhash()?;
+
     let txn = Transaction::new_signed_with_payer(
         &instructions,
         Some(payer_pk),
