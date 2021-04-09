@@ -1261,8 +1261,10 @@ impl Processor {
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
+        } else if coll_ratio < mango_group.maint_coll_ratio {
+            liqee_margin_account.being_liquidated = true;
         } else {
-            check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
+            throw_err!(MangoErrorCode::NotLiquidatable)?;
         }
         let open_orders_acc = &open_orders_accs[market_i];
         let signers_seeds = gen_signer_seeds(&mango_group.signer_nonce, mango_group_acc.key);
@@ -1388,8 +1390,6 @@ impl Processor {
             return Ok(());
         } else {
             liqee_margin_account.being_liquidated = true;
-            // TODO make it so you can't place orders when account is being liquidated
-            // TODO set max orders allowed
         }
 
         // Get how much to deposit and how much to withdraw
@@ -1425,12 +1425,8 @@ impl Processor {
                     }
                 }
             }
-
         }
-
-
         // TODO do I need to check total deposits and total borrows?
-
         Ok(())
     }
 
