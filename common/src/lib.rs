@@ -265,7 +265,6 @@ pub fn send_txn(client: &RpcClient, txn: &Transaction, _simulate: bool) -> Resul
     //     }
     //
     // )?)
-    client.get
     let txid = client.send_transaction_with_config(txn, RpcSendTransactionConfig {
         skip_preflight: true,
         ..RpcSendTransactionConfig::default()
