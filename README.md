@@ -19,7 +19,7 @@ and/or here: https://docs.solana.com/cli to get set up with node and rust as wel
 
 ### get rust
 ```
-sudo apt-get install -y pkg-config build-essential python3-pip jq
+sudo apt-get install -y pkg-config build-essential python3-pip jq libssl-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 rustup component add rustfmt
