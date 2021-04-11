@@ -19,7 +19,7 @@ and/or here: https://docs.solana.com/cli to get set up with node and rust as wel
 
 ### get rust
 ```
-sudo apt-get install -y pkg-config build-essential python3-pip jq libssl-dev
+sudo apt-get install -y pkg-config build-essential python3-pip jq
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 rustup component add rustfmt
@@ -31,6 +31,7 @@ rustup component add rust-src
 ```
 VERSION=v1.5.14
 sh -c "$(curl -sSfL https://release.solana.com/$VERSION/install)"
+sudo apt-get install -y libssl-dev libudev-dev
 cargo install spl-token-cli
 
 git clone git@github.com:blockworks-foundation/mango.git
