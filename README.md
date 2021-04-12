@@ -29,8 +29,9 @@ rustup component add rust-src
 
 ### get mango
 ```
-VERSION=v1.5.14
+VERSION=v1.6.4
 sh -c "$(curl -sSfL https://release.solana.com/$VERSION/install)"
+sudo apt-get install -y libssl-dev libudev-dev
 cargo install spl-token-cli
 
 git clone git@github.com:blockworks-foundation/mango.git
