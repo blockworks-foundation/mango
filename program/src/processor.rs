@@ -1889,7 +1889,7 @@ fn get_in_out_quantities(
     out_token_index: usize,
     liqor_max_in: u64
 ) -> MangoResult<(u64, u64)> {
-    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)?;
+    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)? + ONE_U64F64;
     let out_avail: U64F64 = margin_account.deposits[out_token_index] * mango_group.indexes[out_token_index].deposit;
     let out_avail_val = out_avail * prices[out_token_index];
 
