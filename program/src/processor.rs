@@ -1305,9 +1305,7 @@ impl Processor {
         accounts: &[AccountInfo],
         max_deposit: u64
     ) -> MangoResult<()> {
-
         const NUM_FIXED: usize = 10;
-        // TODO make it so canceling orders feature is optional if no orders outstanding to cancel
         let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS];
         let (
             fixed_accs,
@@ -1889,7 +1887,7 @@ fn get_in_out_quantities(
     out_token_index: usize,
     liqor_max_in: u64
 ) -> MangoResult<(u64, u64)> {
-    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)?;
+    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)? + ONE_U64F64;  // add a little more than exact deficit
     let out_avail: U64F64 = margin_account.deposits[out_token_index] * mango_group.indexes[out_token_index].deposit;
     let out_avail_val = out_avail * prices[out_token_index];
 
@@ -1907,7 +1905,6 @@ fn get_in_out_quantities(
     let in_quantity = min(min(max_in, native_borrow), U64F64::from_num(liqor_max_in));
     let deposit: U64F64 = in_quantity / mango_group.indexes[in_token_index].borrow;
 
-    // TODO if borrowed is close to Deposit, just set borrowed == 0
     checked_sub_borrow(mango_group, margin_account, in_token_index, deposit)?;
 
     // Withdraw incentive funds to liqor

@@ -351,8 +351,7 @@ pub enum MangoInstruction {
     PartialLiquidate {
         /// Quantity of the token being deposited to repay borrows
         max_deposit: u64
-    },
-
+    }
 }
 
 
@@ -382,7 +381,6 @@ impl MangoInstruction {
                 }
             }
             1 => {
-
                 MangoInstruction::InitMarginAccount
             },
             2 => {

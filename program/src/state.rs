@@ -61,7 +61,6 @@ pub trait Loadable: Pod {
     fn load<'a>(account: &'a AccountInfo) -> Result<Ref<'a, Self>, ProgramError> {
         Ok(Ref::map(account.try_borrow_data()?, |data| from_bytes(data)))
     }
-
     fn load_from_bytes(data: &[u8]) -> Result<&Self, ProgramError> {
         Ok(from_bytes(data))
     }
