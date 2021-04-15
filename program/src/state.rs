@@ -125,6 +125,7 @@ pub struct MangoGroup {
     /// This admin key is only for alpha release and the only power it has is to amend borrow limits
     /// If users borrow too much too quickly before liquidators are able to handle the volume,
     /// lender funds will be at risk. Hence these borrow limits will be raised slowly
+    /// UPDATE: 4/15/2021 - this admin key is now useless, borrow limits are removed
     pub admin: Pubkey,
     pub borrow_limits: [u64; NUM_TOKENS],
 
