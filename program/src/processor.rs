@@ -392,7 +392,6 @@ impl Processor {
 
         check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
         check_default!(mango_group.has_valid_deposits_borrows(token_index))?;
-        check_default!(margin_account.get_native_borrow(&index, token_index) <= mango_group.borrow_limits[token_index])?;
         Ok(())
     }
 
@@ -836,7 +835,6 @@ impl Processor {
 
             check_default!(!reduce_only)?;  // Cannot borrow more in reduce only mode
             checked_add_borrow(&mut mango_group, &mut margin_account, token_i , rem_spend / index.borrow)?;
-            check_default!(margin_account.get_native_borrow(&index, token_i) <= mango_group.borrow_limits[token_i])?;
         }
 
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
@@ -1164,7 +1162,6 @@ impl Processor {
 
                 check_default!(!reduce_only)?;  // Cannot borrow more in reduce only mode
                 checked_add_borrow(&mut mango_group, &mut margin_account, out_token_i, rem_spend / out_index.borrow)?;
-                check!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::BorrowLimitExceeded)?;
             } else {  // just spend user deposits
                 let mango_spent = U64F64::from_num(total_out) / out_index.deposit;
                 checked_sub_deposit(&mut mango_group, &mut margin_account, out_token_i, mango_spent)?;
