@@ -392,6 +392,11 @@ impl Processor {
 
         check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
         check_default!(mango_group.has_valid_deposits_borrows(token_index))?;
+
+        if !margin_account.has_borrows {
+            margin_account.has_borrows = true;
+        }
+
         Ok(())
     }
 
@@ -421,6 +426,15 @@ impl Processor {
         check_eq_default!(&margin_account.owner, owner_acc.key)?;
 
         settle_borrow_unchecked(&mut mango_group, &mut margin_account, token_index, quantity)?;
+
+        let mut has_borrows = false;
+        for i in 0..NUM_TOKENS {
+            if margin_account.borrows[i] > 0 {
+                has_borrows = true;
+            }
+        }
+        margin_account.has_borrows = has_borrows;
+
         Ok(())
     }
 
