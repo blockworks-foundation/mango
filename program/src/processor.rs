@@ -392,7 +392,6 @@ impl Processor {
 
         check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
         check_default!(mango_group.has_valid_deposits_borrows(token_index))?;
-
         Ok(())
     }
 
@@ -422,15 +421,6 @@ impl Processor {
         check_eq_default!(&margin_account.owner, owner_acc.key)?;
 
         settle_borrow_unchecked(&mut mango_group, &mut margin_account, token_index, quantity)?;
-
-        let mut has_borrows = false;
-        for i in 0..NUM_TOKENS {
-            if margin_account.borrows[i] > 0 {
-                has_borrows = true;
-            }
-        }
-        margin_account.has_borrows = has_borrows;
-
         Ok(())
     }
 
@@ -1659,6 +1649,14 @@ fn checked_sub_borrow(
 ) -> MangoResult<()> {
     margin_account.checked_sub_borrow(token_index, quantity)?;
     mango_group.checked_sub_borrow(token_index, quantity)
+
+    let mut has_borrows = false;
+    for i in 0..NUM_TOKENS {
+        if margin_account.borrows[i] > 0 {
+            has_borrows = true;
+        }
+    }
+    margin_account.has_borrows = has_borrows;
 }
 
 fn checked_add_deposit(
@@ -1680,7 +1678,7 @@ fn checked_add_borrow(
     margin_account.checked_add_borrow(token_index, quantity)?;
     mango_group.checked_add_borrow(token_index, quantity)
 
-    if !margin_account.has_borrows {
+    if !margin_account.has_borrows && quantity > 0 {
         margin_account.has_borrows = true;
     }
 }
