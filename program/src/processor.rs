@@ -393,10 +393,6 @@ impl Processor {
         check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
         check_default!(mango_group.has_valid_deposits_borrows(token_index))?;
 
-        if !margin_account.has_borrows {
-            margin_account.has_borrows = true;
-        }
-
         Ok(())
     }
 
@@ -1666,6 +1662,10 @@ fn checked_add_borrow(
 ) -> MangoResult<()> {
     margin_account.checked_add_borrow(token_index, quantity)?;
     mango_group.checked_add_borrow(token_index, quantity)
+
+    if !margin_account.has_borrows {
+        margin_account.has_borrows = true;
+    }
 }
 
 pub fn get_prices(
