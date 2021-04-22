@@ -392,7 +392,6 @@ impl Processor {
 
         check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
         check_default!(mango_group.has_valid_deposits_borrows(token_index))?;
-        check_default!(margin_account.get_native_borrow(&index, token_index) <= mango_group.borrow_limits[token_index])?;
         Ok(())
     }
 
@@ -836,7 +835,6 @@ impl Processor {
 
             check_default!(!reduce_only)?;  // Cannot borrow more in reduce only mode
             checked_add_borrow(&mut mango_group, &mut margin_account, token_i , rem_spend / index.borrow)?;
-            check_default!(margin_account.get_native_borrow(&index, token_i) <= mango_group.borrow_limits[token_i])?;
         }
 
         let coll_ratio = margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
@@ -1164,7 +1162,6 @@ impl Processor {
 
                 check_default!(!reduce_only)?;  // Cannot borrow more in reduce only mode
                 checked_add_borrow(&mut mango_group, &mut margin_account, out_token_i, rem_spend / out_index.borrow)?;
-                check!(margin_account.get_native_borrow(&out_index, out_token_i) <= mango_group.borrow_limits[out_token_i], MangoErrorCode::BorrowLimitExceeded)?;
             } else {  // just spend user deposits
                 let mango_spent = U64F64::from_num(total_out) / out_index.deposit;
                 checked_sub_deposit(&mut mango_group, &mut margin_account, out_token_i, mango_spent)?;
@@ -1551,21 +1548,23 @@ fn settle_borrow_unchecked(
     token_index: usize,
     quantity: u64
 ) -> MangoResult<()> {
-    let index: &MangoIndex = &mango_group.indexes[token_index];
+    let deposit_index = mango_group.indexes[token_index].deposit;
+    let borrow_index = mango_group.indexes[token_index].borrow;
+    let native_borrow: U64F64 = margin_account.borrows[token_index] * borrow_index;
+    let native_deposit: U64F64 = margin_account.deposits[token_index] * deposit_index;
+    let quantity = U64F64::from_num(quantity);
 
-    let native_borrow = margin_account.get_native_borrow(index, token_index);
-    let native_deposit = margin_account.get_native_deposit(index, token_index);
-
-    let quantity = cmp::min(cmp::min(quantity, native_borrow), native_deposit);
-
-    let borr_settle = U64F64::from_num(quantity) / index.borrow;
-    let dep_settle = U64F64::from_num(quantity) / index.deposit;
-
-    checked_sub_deposit(mango_group, margin_account, token_index, dep_settle)?;
-    checked_sub_borrow(mango_group, margin_account, token_index, borr_settle)?;
+    let quantity = min(quantity, native_deposit);
+    if quantity >= native_borrow {  // Reduce borrows to 0 to prevent rounding related dust
+        // NOTE: native_borrow / index.borrow is same as margin_account.borrows[token_index]
+        checked_sub_deposit(mango_group, margin_account, token_index, native_borrow / deposit_index)?;
+        checked_sub_borrow(mango_group, margin_account, token_index, margin_account.borrows[token_index])?;
+    } else {
+        checked_sub_deposit(mango_group, margin_account, token_index, quantity / deposit_index)?;
+        checked_sub_borrow(mango_group, margin_account, token_index, quantity / borrow_index)?;
+    }
 
     // No need to check collateralization ratio or deposits/borrows validity
-
     Ok(())
 
 }
@@ -1889,7 +1888,7 @@ fn get_in_out_quantities(
     out_token_index: usize,
     liqor_max_in: u64
 ) -> MangoResult<(u64, u64)> {
-    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)?;
+    let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)? + ONE_U64F64;
     let out_avail: U64F64 = margin_account.deposits[out_token_index] * mango_group.indexes[out_token_index].deposit;
     let out_avail_val = out_avail * prices[out_token_index];
 
