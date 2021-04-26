@@ -1658,7 +1658,7 @@ fn checked_sub_borrow(
     }
     margin_account.has_borrows = has_borrows;
 
-    Ok()
+    Ok(())
 }
 
 fn checked_add_deposit(
@@ -1684,7 +1684,7 @@ fn checked_add_borrow(
         margin_account.has_borrows = true;
     }
 
-    Ok()
+    Ok(())
 }
 
 pub fn get_prices(
