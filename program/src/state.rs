@@ -31,6 +31,7 @@ pub const ONE_U64F64: U64F64 = U64F64!(1);
 pub const ZERO_U64F64: U64F64 = U64F64!(0);
 pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
 pub const DUST_THRESHOLD: U64F64 = U64F64!(0.01);  // TODO make this part of MangoGroup state
+pub const EPSILON: U64F64 = U64F64!(1.0e-17);
 
 macro_rules! check_default {
     ($cond:expr) => {
@@ -173,13 +174,13 @@ impl MangoGroup {
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
         let index: &MangoIndex = &self.indexes[token_index];
-        let native_deposits = index.deposit * self.total_deposits[token_index];
-        let native_borrows = index.borrow * self.total_borrows[token_index];
+        let native_deposits = index.deposit.checked_mul(self.total_deposits[token_index]).unwrap();
+        let native_borrows = index.borrow.checked_mul(self.total_borrows[token_index]).unwrap();
         if native_deposits <= native_borrows {  // if deps == 0, this is always true
             return MAX_R;  // kind of an error state
         }
 
-        let utilization = native_borrows / native_deposits;
+        let utilization = native_borrows.checked_div(native_deposits).unwrap();
         if utilization > OPTIMAL_UTIL {
             let extra_util = utilization - OPTIMAL_UTIL;
             let slope = (MAX_R - OPTIMAL_R) / (ONE_U64F64 - OPTIMAL_UTIL);
@@ -205,10 +206,10 @@ impl MangoGroup {
                 continue;
             }
 
-            let native_deposits: U64F64 = self.total_deposits[i] * index.deposit;
-            let native_borrows: U64F64 = self.total_borrows[i] * index.borrow;
-            let epsilon = U64F64::from_bits(1u128) * 100;
-            check_default!(native_borrows <= native_deposits + epsilon)?;  // to account for rounding errors
+            // don't need to check here because this check already happens in get interest rate
+            let native_deposits: U64F64 = self.total_deposits[i].checked_mul(index.deposit).unwrap();
+            let native_borrows: U64F64 = self.total_borrows[i].checked_mul(index.borrow).unwrap();
+            check_default!(native_borrows <= native_deposits + EPSILON)?;  // to account for rounding errors
 
             let utilization = native_borrows.checked_div(native_deposits).unwrap();
             let borrow_interest = interest_rate
