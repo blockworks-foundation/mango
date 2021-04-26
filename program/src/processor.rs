@@ -1638,7 +1638,7 @@ fn checked_sub_deposit(
     quantity: U64F64
 ) -> MangoResult<()> {
     margin_account.checked_sub_deposit(token_index, quantity)?;
-    mango_group.checked_sub_deposit(token_index, quantity)
+    mango_group.checked_sub_deposit(token_index, quantity)?
 }
 
 fn checked_sub_borrow(
@@ -1648,7 +1648,7 @@ fn checked_sub_borrow(
     quantity: U64F64
 ) -> MangoResult<()> {
     margin_account.checked_sub_borrow(token_index, quantity)?;
-    mango_group.checked_sub_borrow(token_index, quantity)
+    mango_group.checked_sub_borrow(token_index, quantity)?;
 
     let mut has_borrows = false;
     for i in 0..NUM_TOKENS {
@@ -1657,6 +1657,8 @@ fn checked_sub_borrow(
         }
     }
     margin_account.has_borrows = has_borrows;
+
+    Ok()
 }
 
 fn checked_add_deposit(
@@ -1676,11 +1678,13 @@ fn checked_add_borrow(
     quantity: U64F64
 ) -> MangoResult<()> {
     margin_account.checked_add_borrow(token_index, quantity)?;
-    mango_group.checked_add_borrow(token_index, quantity)
+    mango_group.checked_add_borrow(token_index, quantity)?;
 
     if !margin_account.has_borrows && quantity > 0 {
         margin_account.has_borrows = true;
     }
+
+    Ok()
 }
 
 pub fn get_prices(
