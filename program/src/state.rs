@@ -338,7 +338,7 @@ impl MarginAccount {
         if liabs == ZERO_U64F64 {
             Ok(U64F64::MAX)
         } else {
-            Ok(assets / liabs)
+            Ok(assets.checked_div( liabs).unwrap())
         }
     }
     pub fn get_total_assets(
