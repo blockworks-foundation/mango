@@ -272,7 +272,7 @@ pub struct MarginAccount {
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
 
     pub being_liquidated: bool,
-    pub has_borrows: bool, // does the account have any open borrows? set by borrow and settle_borrow
+    pub has_borrows: bool, // does the account have any open borrows? set by checked_add_borrow and checked_sub_borrow
     pub padding: [u8; 6] // padding to make compatible with previous MarginAccount size
 }
 impl_loadable!(MarginAccount);
