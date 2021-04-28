@@ -49,7 +49,6 @@ async fn test_success() {
     let signer_nonce = 0;
     let dex_prog_id = Pubkey::new_unique();
     let srm_vault_pk = Pubkey::new_unique();
-    let admin_pk = Pubkey::new_unique();
     let borrow_limits = [100, 100, 100];
 
     let mut transaction = Transaction::new_with_payer(
@@ -60,7 +59,7 @@ async fn test_success() {
                 &signer_pk,
                 &dex_prog_id,
                 &srm_vault_pk,
-                &admin_pk,
+                &payer.pubkey(),
                 &mints,
                 &vaults,
                 &dexes,
