@@ -9,7 +9,7 @@
 
 ```
 source ~/mango/cli/devnet.env
-cd ~/blockworks-foundation/serum-dex/
+cd ~/blockworks-foundation/serum-dex/crank
 cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $BTC --pc-mint $USDT
 cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $ETH --pc-mint $USDT
 ```

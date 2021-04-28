@@ -568,6 +568,9 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
 
+        // Check if SRM is part of the MangoGroup, if so throw err
+        check!(mango_group.get_token_index(&srm_token::ID).is_none(), MangoErrorCode::FeeDiscountFunctionality)?;
+
         // if MangoSrmAccount is empty, initialize it
         check_eq_default!(mango_srm_account_acc.data_len(), size_of::<MangoSrmAccount>())?;
         let mut mango_srm_account = MangoSrmAccount::load_mut(mango_srm_account_acc)?;
@@ -629,6 +632,8 @@ impl Processor {
         ] = accounts;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+        check!(mango_group.get_token_index(&srm_token::ID).is_none(), MangoErrorCode::FeeDiscountFunctionality)?;
+
         let mut mango_srm_account = MangoSrmAccount::load_mut_checked(
             program_id, mango_srm_account_acc, mango_group_acc.key)?;
 
