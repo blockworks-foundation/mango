@@ -27,6 +27,12 @@ rustup default nightly
 rustup component add rust-src
 ```
 
+Note that currently rust version at least 1.50 is needed. Check rust version and upgrade if necessary with
+```
+rustc --version
+rustup update
+```
+
 ### get mango
 ```
 VERSION=v1.6.4
@@ -64,3 +70,11 @@ cd cli
 
 ### deploy mainnet
 Rework devnet_deploy.sh and use cli/mainnet.env to deploy to mainnet 
+
+
+### run tests
+Regression and integration tests are in progress. To run them
+```
+cd program
+cargo test
+```
