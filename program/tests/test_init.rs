@@ -18,7 +18,7 @@ use mango::state::MangoGroup;
 use common::create_signer_key_and_nonce;
 
 #[tokio::test]
-async fn test_success() {
+async fn test_init() {
     let program_id = Pubkey::new_unique();
 
     let mut test = ProgramTest::new(
@@ -48,11 +48,9 @@ async fn test_success() {
     let srm_vault = add_token_account(&mut test, signer_pk, srm_mint.pubkey);
 
     let dex_prog_id = Pubkey::new_unique();
-    let btc_usdt_dex = Pubkey::new_unique();
-    test.add_account(btc_usdt_dex, Account::new(u32::MAX as u64, 0, &dex_prog_id));
-    let eth_usdt_dex = Pubkey::new_unique();
-    test.add_account(eth_usdt_dex, Account::new(u32::MAX as u64, 0, &dex_prog_id));
-    let dexes = vec![btc_usdt_dex, eth_usdt_dex];
+    let btc_usdt_dex = add_dex_empty(&mut test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let eth_usdt_dex = add_dex_empty(&mut test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let dexes = vec![btc_usdt_dex.pubkey, eth_usdt_dex.pubkey];
 
     let unit = 10u64.pow(6);
     let btc_usdt = add_aggregator(&mut test, "BTC:USDT", 6, 50_000 * unit, &program_id);
