@@ -1,4 +1,3 @@
-use std::mem::size_of;
 use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
 
 use flux_aggregator::borsh_utils;
@@ -16,7 +15,7 @@ use spl_token::state::{Mint, Account as Token, AccountState};
 
 use solana_program_test::ProgramTest;
 use mango::processor::srm_token;
-use serum_dex::state::MarketState;
+use serum_dex::state::{MarketState, AccountFlag};
 use serum_dex::state::ToAlignedBytes;
 
 
@@ -101,9 +100,9 @@ pub struct TestDex {
 
 pub fn add_dex_empty(test: &mut ProgramTest, base_mint: Pubkey, quote_mint: Pubkey, dex_prog_id: Pubkey) -> TestDex {
     let pubkey = Pubkey::new_unique();
-    let mut acc = Account::new(u32::MAX as u64, size_of::<MarketState>(), &dex_prog_id);
+    let mut acc = Account::new(u32::MAX as u64, 0, &dex_prog_id);
     let ms = MarketState {
-        account_flags: 0,
+        account_flags: (AccountFlag::Initialized | AccountFlag::Market).bits(),
         own_address: pubkey.to_aligned_bytes(),
         vault_signer_nonce: 0,
         coin_mint: base_mint.to_aligned_bytes(),
@@ -129,7 +128,15 @@ pub fn add_dex_empty(test: &mut ProgramTest, base_mint: Pubkey, quote_mint: Pubk
         fee_rate_bps: 1,
         referrer_rebates_accrued: 0,
     };
-    acc.data = transmute_one_to_bytes(&ms).to_vec();
+    let head: &[u8; 5] = b"serum";
+    let tail: &[u8; 7] = b"padding";
+    let data = transmute_one_to_bytes(&ms);
+    let mut accdata = vec![];
+    accdata.extend(head);
+    accdata.extend(data);
+    accdata.extend(tail);
+    acc.data = accdata;
+
     test.add_account(pubkey, acc);
     TestDex { pubkey }
 }
