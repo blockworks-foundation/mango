@@ -162,16 +162,6 @@ pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) ->
     TestTokenAccount { pubkey }
 }
 
-
-// pub struct TestDex {
-//     pub pubkey: Pubkey,
-// }
-
-// pub fn add_dex(test: &mut ProgramTest, base: Pubkey, quote: Pubkey) -> TestDex {
-//     let pubkey = Pubkey::new_unique();
-
-// }
-
 pub struct TestAggregator {
     pub name: String,
     pub pubkey: Pubkey,
