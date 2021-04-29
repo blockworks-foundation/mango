@@ -9,9 +9,10 @@ use solana_sdk::account_info::IntoAccountInfo;
 use solana_sdk::account::Account;
 use solana_sdk::signature::{Keypair, Signer};
 
-use spl_token::state::Mint;
+use spl_token::state::{Mint, Account as Token, AccountState};
 
 use solana_program_test::ProgramTest;
+use mango::processor::srm_token;
 
 
 trait AddPacked {
@@ -66,6 +67,59 @@ pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestQuoteMint {
         decimals,
     }
 }
+
+pub fn add_mint_srm(test: &mut ProgramTest) -> TestQuoteMint {
+    let authority = Keypair::new();
+    let pubkey = srm_token::ID;
+    let decimals = 6;
+    test.add_packable_account(
+        pubkey,
+        u32::MAX as u64,
+        &Mint {
+            is_initialized: true,
+            mint_authority: COption::Some(authority.pubkey()),
+            decimals,
+            ..Mint::default()
+        },
+        &spl_token::id(),
+    );
+    TestQuoteMint {
+        pubkey,
+        authority,
+        decimals,
+    }
+}
+
+pub struct TestTokenAccount {
+    pub pubkey: Pubkey,
+}
+
+pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) -> TestTokenAccount {
+    let pubkey = Pubkey::new_unique();
+    test.add_packable_account(
+        pubkey,
+        u32::MAX as u64,
+        &Token {
+            mint: mint,
+            owner: owner,
+            amount: 0,
+            state: AccountState::Initialized,
+            ..Token::default()
+        },
+        &spl_token::id(),
+    );
+    TestTokenAccount { pubkey }
+}
+
+
+// pub struct TestDex {
+//     pub pubkey: Pubkey,
+// }
+
+// pub fn add_dex(test: &mut ProgramTest, base: Pubkey, quote: Pubkey) -> TestDex {
+//     let pubkey = Pubkey::new_unique();
+
+// }
 
 pub struct TestAggregator {
     pub name: String,
