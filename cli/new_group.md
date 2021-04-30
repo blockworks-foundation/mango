@@ -2,9 +2,10 @@
 2. Go to blockworks-foundation/solana-flux-aggregator, Add the token pairs you want into config/setup.dev.json
 3. Run `yarn solink setup config/setup.dev.json`
 4. Make sure the feeds in solana flux aggregator can feed new tokens
-5. Add the oracle pubkeys found in deploy.dev.json into ids.json devnet.oracles
-6. Add the token mints to ids.json devnet.symbols
-7. Amend devnet.env and add new symbols
+   * Make sure the supported exchanges in feeds.ts have the tokens you want, if not write the feed
+5. Add the oracle pubkeys found in deploy.dev.json into mango-client-ts/src/ids.json devnet.oracles
+6. Add the token mints for your new tokens to ids.json devnet.symbols
+7. Amend devnet.env and add your new new symbols
 8. List the new markets. For example:
 
 ```
@@ -37,3 +38,5 @@ cargo run -- $CLUSTER init-mango-group \
 --mango-program-id $MANGO_PROGRAM_ID \
 --borrow-limits $BORROW_LIMITS
 ```
+
+13. For mainnet, it's recommended that you first do this on devnet and then rework it for mainnet
