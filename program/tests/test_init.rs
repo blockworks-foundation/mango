@@ -53,6 +53,7 @@ async fn test_init_mango_group() {
 
 #[tokio::test]
 async fn test_deposit_srm() {
+    // Test that the DepositSrm instruction succeeds in the simple case
     let program_id = Pubkey::new_unique();
 
     let mut test = ProgramTest::new(
