@@ -1,5 +1,7 @@
+use std::mem::size_of;
 use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
 
+use common::create_signer_key_and_nonce;
 use flux_aggregator::borsh_utils;
 use flux_aggregator::borsh_state::BorshState;
 use flux_aggregator::state::{Aggregator, AggregatorConfig, Answer};
@@ -15,6 +17,7 @@ use spl_token::state::{Mint, Account as Token, AccountState};
 
 use solana_program_test::ProgramTest;
 use mango::processor::srm_token;
+use mango::state::MangoGroup;
 use serum_dex::state::{MarketState, AccountFlag};
 use serum_dex::state::ToAlignedBytes;
 
@@ -44,14 +47,14 @@ impl AddPacked for ProgramTest {
 }
 
 
-pub struct TestQuoteMint {
+pub struct TestMint {
     pub pubkey: Pubkey,
     pub authority: Keypair,
     pub decimals: u8,
 }
 
 
-pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestQuoteMint {
+pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestMint {
     let authority = Keypair::new();
     let pubkey = Pubkey::new_unique();
     test.add_packable_account(
@@ -65,14 +68,14 @@ pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestQuoteMint {
         },
         &spl_token::id(),
     );
-    TestQuoteMint {
+    TestMint {
         pubkey,
         authority,
         decimals,
     }
 }
 
-pub fn add_mint_srm(test: &mut ProgramTest) -> TestQuoteMint {
+pub fn add_mint_srm(test: &mut ProgramTest) -> TestMint {
     let authority = Keypair::new();
     let pubkey = srm_token::ID;
     let decimals = 6;
@@ -87,7 +90,7 @@ pub fn add_mint_srm(test: &mut ProgramTest) -> TestQuoteMint {
         },
         &spl_token::id(),
     );
-    TestQuoteMint {
+    TestMint {
         pubkey,
         authority,
         decimals,
@@ -203,5 +206,71 @@ pub fn add_aggregator(test: &mut ProgramTest, name: &str, decimals: u8, price: u
         name: name.to_string(),
         pubkey,
         price,
+    }
+}
+
+// Holds all of the dependencies for a MangoGroup
+pub struct TestMangoGroup {
+    pub program_id: Pubkey,
+    pub mango_group_pk: Pubkey,
+    pub signer_pk: Pubkey,
+    pub signer_nonce: u64,
+    
+    // Mints and Vaults must ordered with base assets first, quote asset last
+    // They must be ordered in the same way
+    pub mints: Vec<TestMint>,
+    pub vaults: Vec<TestTokenAccount>,
+
+    pub srm_mint: TestMint,
+    pub srm_vault: TestTokenAccount,
+
+    pub dex_prog_id: Pubkey,
+    // Dexes and Oracles must be sorted in the same way as the first n-1 mints
+    // mints[x] / mints[-1]
+    pub dexes: Vec<TestDex>,
+    pub oracles: Vec<TestAggregator>,
+}
+
+pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> TestMangoGroup {
+    let mango_group_pk = Pubkey::new_unique();
+    let (signer_pk, signer_nonce) = create_signer_key_and_nonce(&program_id, &mango_group_pk);
+    test.add_account(mango_group_pk, Account::new(u32::MAX as u64, size_of::<MangoGroup>(), &program_id));
+
+    let btc_mint = add_mint(test, 6);
+    let eth_mint = add_mint(test, 6);
+    let usdt_mint = add_mint(test, 6);
+
+    let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey);
+    let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey);
+    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey);
+
+    let srm_mint = add_mint_srm(test);
+    let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey);
+
+    let dex_prog_id = Pubkey::new_unique();
+    let btc_usdt_dex = add_dex_empty(test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let eth_usdt_dex = add_dex_empty(test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+
+    let unit = 10u64.pow(6);
+    let btc_usdt = add_aggregator(test, "BTC:USDT", 6, 50_000 * unit, &program_id);
+    let eth_usdt = add_aggregator(test, "ETH:USDT", 6, 2_000 * unit, &program_id);
+
+    let mints = vec![btc_mint, eth_mint, usdt_mint];
+    let vaults = vec![btc_vault, eth_vault, usdt_vault];
+    let dexes = vec![btc_usdt_dex, eth_usdt_dex];
+    let oracles = vec![btc_usdt, eth_usdt];
+
+    TestMangoGroup {
+        program_id,
+        mango_group_pk,
+        signer_pk,
+        signer_nonce,
+        mints,
+        vaults,
+        srm_mint,
+        srm_vault,
+        dex_prog_id,
+        dexes,
+        oracles,
     }
 }
