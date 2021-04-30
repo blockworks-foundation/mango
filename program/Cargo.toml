@@ -1,6 +1,6 @@
 [package]
 name = "mango"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["blockworks"]
 edition = "2018"
 
@@ -27,6 +27,11 @@ num-derive = "^0.3.3"
 flux-aggregator = { version = "^0.1", git = "https://github.com/blockworks-foundation/solana-flux-aggregator.git", features=["program", "no-entrypoint"] }
 fixed = { version = "^1.7.0", features=["serde"] }
 fixed-macro = "^1.1.1"
+
+[dev-dependencies]
+solana-sdk = "^1.6.4"
+solana-program-test = "^1.6.4"
+common = { version = "*", path = "../common" }
 
 [profile.release]
 lto = true

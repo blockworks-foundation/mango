@@ -56,7 +56,7 @@ macro_rules! throw_err {
     }
 }
 
-mod srm_token {
+pub mod srm_token {
     use solana_program::declare_id;
 
     #[cfg(feature = "devnet")]
@@ -1548,21 +1548,23 @@ fn settle_borrow_unchecked(
     token_index: usize,
     quantity: u64
 ) -> MangoResult<()> {
-    let index: &MangoIndex = &mango_group.indexes[token_index];
+    let deposit_index = mango_group.indexes[token_index].deposit;
+    let borrow_index = mango_group.indexes[token_index].borrow;
+    let native_borrow: U64F64 = margin_account.borrows[token_index] * borrow_index;
+    let native_deposit: U64F64 = margin_account.deposits[token_index] * deposit_index;
+    let quantity = U64F64::from_num(quantity);
 
-    let native_borrow = margin_account.get_native_borrow(index, token_index);
-    let native_deposit = margin_account.get_native_deposit(index, token_index);
-
-    let quantity = cmp::min(cmp::min(quantity, native_borrow), native_deposit);
-
-    let borr_settle = U64F64::from_num(quantity) / index.borrow;
-    let dep_settle = U64F64::from_num(quantity) / index.deposit;
-
-    checked_sub_deposit(mango_group, margin_account, token_index, dep_settle)?;
-    checked_sub_borrow(mango_group, margin_account, token_index, borr_settle)?;
+    let quantity = min(quantity, native_deposit);
+    if quantity >= native_borrow {  // Reduce borrows to 0 to prevent rounding related dust
+        // NOTE: native_borrow / index.borrow is same as margin_account.borrows[token_index]
+        checked_sub_deposit(mango_group, margin_account, token_index, native_borrow / deposit_index)?;
+        checked_sub_borrow(mango_group, margin_account, token_index, margin_account.borrows[token_index])?;
+    } else {
+        checked_sub_deposit(mango_group, margin_account, token_index, quantity / deposit_index)?;
+        checked_sub_borrow(mango_group, margin_account, token_index, quantity / borrow_index)?;
+    }
 
     // No need to check collateralization ratio or deposits/borrows validity
-
     Ok(())
 
 }
