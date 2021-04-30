@@ -10,7 +10,7 @@ use flux_aggregator::state::{Aggregator, AggregatorConfig, Answer};
 use solana_program::program_option::COption;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
-use solana_program_test::ProgramTest;
+use solana_program_test::{ProgramTest, BanksClient};
 
 use solana_sdk::{
     account_info::IntoAccountInfo,
@@ -153,7 +153,7 @@ pub struct TestTokenAccount {
     pub pubkey: Pubkey,
 }
 
-pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) -> TestTokenAccount {
+pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey, initial_balance: u64) -> TestTokenAccount {
     let pubkey = Pubkey::new_unique();
     test.add_packable_account(
         pubkey,
@@ -161,7 +161,7 @@ pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) ->
         &Token {
             mint: mint,
             owner: owner,
-            amount: 0,
+            amount: initial_balance,
             state: AccountState::Initialized,
             ..Token::default()
         },
@@ -245,7 +245,7 @@ fn to_fixed_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
 }
 
 impl TestMangoGroup {
-    pub fn init_mango_group(self, payer: &Pubkey) -> Instruction {
+    pub fn init_mango_group(&self, payer: &Pubkey) -> Instruction {
         init_mango_group(
             &self.program_id,
             &self.mango_group_pk,
@@ -260,7 +260,7 @@ impl TestMangoGroup {
             self.signer_nonce,
             U64F64::from_num(1.1),
             U64F64::from_num(1.2),
-            to_fixed_array(self.borrow_limits),
+            to_fixed_array(self.borrow_limits.clone()),
         ).unwrap()
     }
 }
@@ -274,12 +274,12 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
     let eth_mint = add_mint(test, 6);
     let usdt_mint = add_mint(test, 6);
 
-    let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey);
-    let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey);
-    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey);
+    let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey, 0);
+    let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey, 0);
+    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey, 0);
 
     let srm_mint = add_mint_srm(test);
-    let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey);
+    let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey, 0);
 
     let dex_prog_id = Pubkey::new_unique();
     let btc_usdt_dex = add_dex_empty(test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
@@ -309,4 +309,12 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
         oracles,
         borrow_limits,
     }
+}
+
+pub async fn get_token_balance(banks_client: &mut BanksClient, pubkey: Pubkey) -> u64 {
+    let token: Account = banks_client.get_account(pubkey).await.unwrap().unwrap();
+
+    spl_token::state::Account::unpack(&token.data[..])
+        .unwrap()
+        .amount
 }
