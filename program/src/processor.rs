@@ -56,7 +56,7 @@ macro_rules! throw_err {
     }
 }
 
-mod srm_token {
+pub mod srm_token {
     use solana_program::declare_id;
 
     #[cfg(feature = "devnet")]

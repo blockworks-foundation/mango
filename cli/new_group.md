@@ -18,8 +18,8 @@ cargo run -- $CLUSTER list-market $KEYPAIR $DEX_PROGRAM_ID --coin-mint $ETH --pc
 10. go to blockworks-foundation/liquidator/crank.sh and add support for your new markets
 11. run crank.sh to run the cranks, for example
 ```
-source crank.sh btc usdt
-source crank.sh eth usdt
+source crank.sh $KEYPAIR btc usdt
+source crank.sh $KEYPAIR eth usdt
 ```
 12. Deploy new mango group for example:
 ```

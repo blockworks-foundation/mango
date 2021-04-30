@@ -28,6 +28,11 @@ flux-aggregator = { version = "^0.1", git = "https://github.com/blockworks-found
 fixed = { version = "^1.7.0", features=["serde"] }
 fixed-macro = "^1.1.1"
 
+[dev-dependencies]
+solana-sdk = "^1.6.4"
+solana-program-test = "^1.6.4"
+common = { version = "*", path = "../common" }
+
 [profile.release]
 lto = true
 
