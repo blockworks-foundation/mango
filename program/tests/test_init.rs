@@ -4,17 +4,19 @@ use std::mem::size_of;
 
 use fixed::types::U64F64;
 use helpers::*;
+use solana_program::instruction::InstructionError;
 use solana_program_test::*;
 use solana_sdk::{
     pubkey::Pubkey,
     signature::Signer,
-    transaction::Transaction,
+    transaction::{Transaction,TransactionError},
     account::Account,
 };
 
 use mango::entrypoint::process_instruction;
-use mango::instruction::init_mango_group;
-use mango::state::MangoGroup;
+use mango::error::MangoErrorCode;
+use mango::instruction::{init_mango_group, deposit_srm, withdraw_srm};
+use mango::state::{MangoGroup, MangoSrmAccount};
 use common::create_signer_key_and_nonce;
 
 #[tokio::test]
@@ -128,6 +130,11 @@ async fn test_init_srm_sol_usdt() {
     let srm_usdt = add_aggregator(&mut test, "SRM:USDT", 6, 2_000 * unit, &program_id);
     let oracles = vec![sol_usdt.pubkey, srm_usdt.pubkey];
 
+
+    let mango_srm_account_pk = Pubkey::new_unique();
+    test.add_account(mango_srm_account_pk, Account::new(u32::MAX as u64, size_of::<MangoSrmAccount>(), &program_id));
+
+
     let (mut banks_client, payer, recent_blockhash) = test.start().await;
 
     let borrow_limits = [100, 100, 100];
@@ -159,4 +166,72 @@ async fn test_init_srm_sol_usdt() {
         recent_blockhash,
     );
     assert!(banks_client.process_transaction(transaction).await.is_ok());
+
+    let srm_account_pk = Pubkey::new_unique();
+
+    let mut transaction_deposit = Transaction::new_with_payer(
+        &[
+            deposit_srm(
+                &program_id,
+                &mango_group_pk,
+                &mango_srm_account_pk,
+                &payer.pubkey(),
+                &srm_account_pk,
+                &srm_vault.pubkey,
+                100
+            ).unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction_deposit.sign(
+        &[&payer],
+        recent_blockhash,
+    );
+
+    assert_eq!(
+        banks_client
+            .process_transaction(transaction_deposit)
+            .await
+            .unwrap_err()
+            .unwrap(),
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(
+                MangoErrorCode::FeeDiscountFunctionality.into()))
+    );
+
+   let mut transaction_withdraw = Transaction::new_with_payer(
+        &[
+            withdraw_srm(
+                &program_id,
+                &mango_group_pk,
+                &mango_srm_account_pk,
+                &payer.pubkey(),
+                &srm_account_pk,
+                &srm_vault.pubkey,
+                &signer_pk,
+                100
+            ).unwrap(),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction_withdraw.sign(
+        &[&payer],
+        recent_blockhash,
+    );
+
+    assert_eq!(
+        banks_client
+            .process_transaction(transaction_withdraw)
+            .await
+            .unwrap_err()
+            .unwrap(),
+        TransactionError::InstructionError(
+            0,
+            InstructionError::Custom(
+                MangoErrorCode::FeeDiscountFunctionality.into()))
+    );
+
 }
