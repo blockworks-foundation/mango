@@ -1,6 +1,8 @@
 use std::mem::size_of;
+use std::convert::TryInto;
 use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
 
+use fixed::types::U64F64;
 use common::create_signer_key_and_nonce;
 use flux_aggregator::borsh_utils;
 use flux_aggregator::borsh_state::BorshState;
@@ -8,18 +10,21 @@ use flux_aggregator::state::{Aggregator, AggregatorConfig, Answer};
 use solana_program::program_option::COption;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
+use solana_program_test::ProgramTest;
 
-use solana_sdk::account_info::IntoAccountInfo;
-use solana_sdk::account::Account;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::{
+    account_info::IntoAccountInfo,
+    account::Account,
+    instruction::Instruction,
+    signature::{Keypair, Signer}
+};
 
 use spl_token::state::{Mint, Account as Token, AccountState};
+use serum_dex::state::{MarketState, AccountFlag, ToAlignedBytes};
 
-use solana_program_test::ProgramTest;
 use mango::processor::srm_token;
+use mango::instruction::init_mango_group;
 use mango::state::MangoGroup;
-use serum_dex::state::{MarketState, AccountFlag};
-use serum_dex::state::ToAlignedBytes;
 
 
 trait AddPacked {
@@ -229,6 +234,35 @@ pub struct TestMangoGroup {
     // mints[x] / mints[-1]
     pub dexes: Vec<TestDex>,
     pub oracles: Vec<TestAggregator>,
+
+    pub borrow_limits: Vec<u64>,
+}
+
+
+// This should probably go into the main code at some point when we remove the hard-coded market sizes
+fn to_fixed_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into().unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
+
+impl TestMangoGroup {
+    pub fn init_mango_group(self, payer: &Pubkey) -> Instruction {
+        init_mango_group(
+            &self.program_id,
+            &self.mango_group_pk,
+            &self.signer_pk,
+            &self.dex_prog_id,
+            &self.srm_vault.pubkey,
+            payer,
+            self.mints.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.vaults.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.dexes.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.oracles.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.signer_nonce,
+            U64F64::from_num(1.1),
+            U64F64::from_num(1.2),
+            to_fixed_array(self.borrow_limits),
+        ).unwrap()
+    }
 }
 
 pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> TestMangoGroup {
@@ -259,6 +293,7 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
     let vaults = vec![btc_vault, eth_vault, usdt_vault];
     let dexes = vec![btc_usdt_dex, eth_usdt_dex];
     let oracles = vec![btc_usdt, eth_usdt];
+    let borrow_limits = vec![100, 100, 100];
 
     TestMangoGroup {
         program_id,
@@ -272,5 +307,6 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
         dex_prog_id,
         dexes,
         oracles,
+        borrow_limits,
     }
 }
