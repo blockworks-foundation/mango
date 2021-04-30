@@ -17,7 +17,7 @@ This setup assumes you're familiar with the basics of Solana development.
 If you're not, you might find it useful to follow the instructions here: https://github.com/solana-labs/example-helloworld 
 and/or here: https://docs.solana.com/cli to get set up with node and rust as well
 
-### get rust
+### get rust nightly build
 ```
 sudo apt-get install -y pkg-config build-essential python3-pip jq
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -76,5 +76,7 @@ Rework devnet_deploy.sh and use cli/mainnet.env to deploy to mainnet
 Regression and integration tests are in progress. To run them
 ```
 cd program
-cargo test
+cargo build-bpf
+cargo test-bpf
 ```
+
