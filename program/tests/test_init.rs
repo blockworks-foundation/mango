@@ -18,7 +18,9 @@ use mango::state::MangoGroup;
 use common::create_signer_key_and_nonce;
 
 #[tokio::test]
-async fn test_init() {
+async fn test_init_mango_group() {
+    // Mostly a test to ensure we can successfully create the testing harness
+    // Also gives us an alert if the InitMangoGroup tx ends up using too much gas
     let program_id = Pubkey::new_unique();
 
     let mut test = ProgramTest::new(
@@ -28,7 +30,7 @@ async fn test_init() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(51_000);
+    test.set_bpf_compute_max_units(20_000);
 
     let mango_group_pk = Pubkey::new_unique();
     let (signer_pk, signer_nonce) = create_signer_key_and_nonce(&program_id, &mango_group_pk);
