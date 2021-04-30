@@ -76,7 +76,7 @@ Rework devnet_deploy.sh and use cli/mainnet.env to deploy to mainnet
 Regression and integration tests are in progress. To run them
 ```
 cd program
-cargo build-bpf
-cargo test-bpf
+cargo test  # run non-solana VM tests (none at the moment but would include simple unit tests in the future)
+cargo test-bpf --features test-bpf  # run tests that use the solana VM (ie the smart contract tests)
 ```
 
