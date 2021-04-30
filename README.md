@@ -77,4 +77,5 @@ Regression and integration tests are in progress. To run them
 ```
 cd program
 cargo test
+cargo test-bpf
 ```
