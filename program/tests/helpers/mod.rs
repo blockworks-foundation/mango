@@ -1,3 +1,5 @@
+#![cfg(feature="test-bpf")]
+
 use std::mem::size_of;
 use std::convert::TryInto;
 use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
@@ -311,6 +313,7 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
     }
 }
 
+#[allow(dead_code)]  // Compiler complains about this even tho it is used
 pub async fn get_token_balance(banks_client: &mut BanksClient, pubkey: Pubkey) -> u64 {
     let token: Account = banks_client.get_account(pubkey).await.unwrap().unwrap();
 
