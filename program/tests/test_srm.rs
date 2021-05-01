@@ -16,7 +16,7 @@ use solana_program::account_info::AccountInfo;
 
 use mango::{
     entrypoint::process_instruction,
-    instruction::deposit_srm,
+    instruction::{deposit_srm, withdraw_srm},
     state::MangoSrmAccount,
 };
 
@@ -83,4 +83,23 @@ async fn test_deposit_srm() {
         &mango_group.mango_group_pk,
     ).unwrap();
     assert_eq!(mango_srm_account.amount, deposit_amount);
+
+    // Seems like the solana_program_test harness hangs if you try to process a second transaction batch?
+    // let mut transaction = Transaction::new_with_payer(
+    //     &[
+    //         withdraw_srm(
+    //             &program_id,
+    //             &mango_group.mango_group_pk,
+    //             &mango_srm_account_pk,
+    //             &user_pk,
+    //             &user_srm_account.pubkey,
+    //             &mango_group.srm_vault.pubkey,
+    //             &user_pk,
+    //             50,
+    //         ).unwrap(),
+    //     ], 
+    //     Some(&user_pk),
+    // );
+    // transaction.sign(&[&user], banks_client.get_recent_blockhash().await.unwrap());
+    // assert!(banks_client.process_transaction(transaction).await.is_ok());
 }
