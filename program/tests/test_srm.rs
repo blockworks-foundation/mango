@@ -9,6 +9,7 @@ use solana_program_test::*;
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Signer, Keypair},
+    system_instruction::transfer,
     transaction::Transaction,
     account::Account,
 };
@@ -32,7 +33,7 @@ async fn test_deposit_srm() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(20_000);
+    test.set_bpf_compute_max_units(50_000);
 
     let initial_amount = 500;
     let deposit_amount = 100;
@@ -84,22 +85,40 @@ async fn test_deposit_srm() {
     ).unwrap();
     assert_eq!(mango_srm_account.amount, deposit_amount);
 
-    // Seems like the solana_program_test harness hangs if you try to process a second transaction batch?
-    // let mut transaction = Transaction::new_with_payer(
-    //     &[
-    //         withdraw_srm(
-    //             &program_id,
-    //             &mango_group.mango_group_pk,
-    //             &mango_srm_account_pk,
-    //             &user_pk,
-    //             &user_srm_account.pubkey,
-    //             &mango_group.srm_vault.pubkey,
-    //             &user_pk,
-    //             50,
-    //         ).unwrap(),
-    //     ], 
-    //     Some(&user_pk),
-    // );
-    // transaction.sign(&[&user], banks_client.get_recent_blockhash().await.unwrap());
-    // assert!(banks_client.process_transaction(transaction).await.is_ok());
+    // deposit some SOL in the user's account so he can call withdraw_srm
+    let mut transaction2 = Transaction::new_with_payer(
+        &[
+            transfer(
+                &payer.pubkey(),
+                &user_pk,
+                10_000,
+            ),
+        ],
+        Some(&payer.pubkey()),
+    );
+
+    transaction2.sign(
+        &[&payer],
+        recent_blockhash,
+    );
+
+    assert!(banks_client.process_transaction(transaction2).await.is_ok());
+
+    let mut transaction3 = Transaction::new_with_payer(
+        &[
+            withdraw_srm(
+                &program_id,
+                &mango_group.mango_group_pk,
+                &mango_srm_account_pk,
+                &user_pk,
+                &user_srm_account.pubkey,
+                &mango_group.srm_vault.pubkey,
+                &mango_group.signer_pk,
+                50,
+            ).unwrap(),
+        ],
+        Some(&user_pk),
+    );
+    transaction3.sign(&[&user], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction3).await.is_ok());
 }
