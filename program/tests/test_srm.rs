@@ -85,26 +85,7 @@ async fn test_deposit_srm() {
     ).unwrap();
     assert_eq!(mango_srm_account.amount, deposit_amount);
 
-    // deposit some SOL in the user's account so he can call withdraw_srm
     let mut transaction2 = Transaction::new_with_payer(
-        &[
-            transfer(
-                &payer.pubkey(),
-                &user_pk,
-                10_000,
-            ),
-        ],
-        Some(&payer.pubkey()),
-    );
-
-    transaction2.sign(
-        &[&payer],
-        recent_blockhash,
-    );
-
-    assert!(banks_client.process_transaction(transaction2).await.is_ok());
-
-    let mut transaction3 = Transaction::new_with_payer(
         &[
             withdraw_srm(
                 &program_id,
@@ -117,8 +98,8 @@ async fn test_deposit_srm() {
                 50,
             ).unwrap(),
         ],
-        Some(&user_pk),
+        Some(&payer.pubkey()),
     );
-    transaction3.sign(&[&user], recent_blockhash);
-    assert!(banks_client.process_transaction(transaction3).await.is_ok());
+    transaction2.sign(&[&user, &payer], recent_blockhash);
+    assert!(banks_client.process_transaction(transaction2).await.is_ok());
 }
