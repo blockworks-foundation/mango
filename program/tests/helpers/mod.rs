@@ -1,22 +1,32 @@
+#![cfg(feature="test-bpf")]
+
+use std::mem::size_of;
+use std::convert::TryInto;
 use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
 
+use fixed::types::U64F64;
+use common::create_signer_key_and_nonce;
 use flux_aggregator::borsh_utils;
 use flux_aggregator::borsh_state::BorshState;
 use flux_aggregator::state::{Aggregator, AggregatorConfig, Answer};
 use solana_program::program_option::COption;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
+use solana_program_test::{ProgramTest, BanksClient};
 
-use solana_sdk::account_info::IntoAccountInfo;
-use solana_sdk::account::Account;
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::{
+    account_info::IntoAccountInfo,
+    account::Account,
+    instruction::Instruction,
+    signature::{Keypair, Signer}
+};
 
 use spl_token::state::{Mint, Account as Token, AccountState};
+use serum_dex::state::{MarketState, AccountFlag, ToAlignedBytes};
 
-use solana_program_test::ProgramTest;
 use mango::processor::srm_token;
-use serum_dex::state::{MarketState, AccountFlag};
-use serum_dex::state::ToAlignedBytes;
+use mango::instruction::init_mango_group;
+use mango::state::MangoGroup;
 
 
 trait AddPacked {
@@ -44,14 +54,14 @@ impl AddPacked for ProgramTest {
 }
 
 
-pub struct TestQuoteMint {
+pub struct TestMint {
     pub pubkey: Pubkey,
     pub authority: Keypair,
     pub decimals: u8,
 }
 
 
-pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestQuoteMint {
+pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestMint {
     let authority = Keypair::new();
     let pubkey = Pubkey::new_unique();
     test.add_packable_account(
@@ -65,14 +75,14 @@ pub fn add_mint(test: &mut ProgramTest, decimals: u8) -> TestQuoteMint {
         },
         &spl_token::id(),
     );
-    TestQuoteMint {
+    TestMint {
         pubkey,
         authority,
         decimals,
     }
 }
 
-pub fn add_mint_srm(test: &mut ProgramTest) -> TestQuoteMint {
+pub fn add_mint_srm(test: &mut ProgramTest) -> TestMint {
     let authority = Keypair::new();
     let pubkey = srm_token::ID;
     let decimals = 6;
@@ -87,7 +97,7 @@ pub fn add_mint_srm(test: &mut ProgramTest) -> TestQuoteMint {
         },
         &spl_token::id(),
     );
-    TestQuoteMint {
+    TestMint {
         pubkey,
         authority,
         decimals,
@@ -145,7 +155,7 @@ pub struct TestTokenAccount {
     pub pubkey: Pubkey,
 }
 
-pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) -> TestTokenAccount {
+pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey, initial_balance: u64) -> TestTokenAccount {
     let pubkey = Pubkey::new_unique();
     test.add_packable_account(
         pubkey,
@@ -153,7 +163,7 @@ pub fn add_token_account(test: &mut ProgramTest, owner: Pubkey, mint: Pubkey) ->
         &Token {
             mint: mint,
             owner: owner,
-            amount: 0,
+            amount: initial_balance,
             state: AccountState::Initialized,
             ..Token::default()
         },
@@ -204,4 +214,110 @@ pub fn add_aggregator(test: &mut ProgramTest, name: &str, decimals: u8, price: u
         pubkey,
         price,
     }
+}
+
+// Holds all of the dependencies for a MangoGroup
+pub struct TestMangoGroup {
+    pub program_id: Pubkey,
+    pub mango_group_pk: Pubkey,
+    pub signer_pk: Pubkey,
+    pub signer_nonce: u64,
+    
+    // Mints and Vaults must ordered with base assets first, quote asset last
+    // They must be ordered in the same way
+    pub mints: Vec<TestMint>,
+    pub vaults: Vec<TestTokenAccount>,
+
+    pub srm_mint: TestMint,
+    pub srm_vault: TestTokenAccount,
+
+    pub dex_prog_id: Pubkey,
+    // Dexes and Oracles must be sorted in the same way as the first n-1 mints
+    // mints[x] / mints[-1]
+    pub dexes: Vec<TestDex>,
+    pub oracles: Vec<TestAggregator>,
+
+    pub borrow_limits: Vec<u64>,
+}
+
+
+// This should probably go into the main code at some point when we remove the hard-coded market sizes
+fn to_fixed_array<T, const N: usize>(v: Vec<T>) -> [T; N] {
+    v.try_into().unwrap_or_else(|v: Vec<T>| panic!("Expected a Vec of length {} but it was {}", N, v.len()))
+}
+
+impl TestMangoGroup {
+    pub fn init_mango_group(&self, payer: &Pubkey) -> Instruction {
+        init_mango_group(
+            &self.program_id,
+            &self.mango_group_pk,
+            &self.signer_pk,
+            &self.dex_prog_id,
+            &self.srm_vault.pubkey,
+            payer,
+            self.mints.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.vaults.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.dexes.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.oracles.iter().map(|m| m.pubkey).collect::<Vec<Pubkey>>().as_slice(),
+            self.signer_nonce,
+            U64F64::from_num(1.1),
+            U64F64::from_num(1.2),
+            to_fixed_array(self.borrow_limits.clone()),
+        ).unwrap()
+    }
+}
+
+pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> TestMangoGroup {
+    let mango_group_pk = Pubkey::new_unique();
+    let (signer_pk, signer_nonce) = create_signer_key_and_nonce(&program_id, &mango_group_pk);
+    test.add_account(mango_group_pk, Account::new(u32::MAX as u64, size_of::<MangoGroup>(), &program_id));
+
+    let btc_mint = add_mint(test, 6);
+    let eth_mint = add_mint(test, 6);
+    let usdt_mint = add_mint(test, 6);
+
+    let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey, 0);
+    let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey, 0);
+    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey, 0);
+
+    let srm_mint = add_mint_srm(test);
+    let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey, 0);
+
+    let dex_prog_id = Pubkey::new_unique();
+    let btc_usdt_dex = add_dex_empty(test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let eth_usdt_dex = add_dex_empty(test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+
+    let unit = 10u64.pow(6);
+    let btc_usdt = add_aggregator(test, "BTC:USDT", 6, 50_000 * unit, &program_id);
+    let eth_usdt = add_aggregator(test, "ETH:USDT", 6, 2_000 * unit, &program_id);
+
+    let mints = vec![btc_mint, eth_mint, usdt_mint];
+    let vaults = vec![btc_vault, eth_vault, usdt_vault];
+    let dexes = vec![btc_usdt_dex, eth_usdt_dex];
+    let oracles = vec![btc_usdt, eth_usdt];
+    let borrow_limits = vec![100, 100, 100];
+
+    TestMangoGroup {
+        program_id,
+        mango_group_pk,
+        signer_pk,
+        signer_nonce,
+        mints,
+        vaults,
+        srm_mint,
+        srm_vault,
+        dex_prog_id,
+        dexes,
+        oracles,
+        borrow_limits,
+    }
+}
+
+#[allow(dead_code)]  // Compiler complains about this even tho it is used
+pub async fn get_token_balance(banks_client: &mut BanksClient, pubkey: Pubkey) -> u64 {
+    let token: Account = banks_client.get_account(pubkey).await.unwrap().unwrap();
+
+    spl_token::state::Account::unpack(&token.data[..])
+        .unwrap()
+        .amount
 }
