@@ -1,8 +1,7 @@
 dist: bionic
 language: rust
 rust:
-  - 1.0.0
-  - 1.1.0
+  - 1.51.0
 os: linux
 addons:
   apt:
