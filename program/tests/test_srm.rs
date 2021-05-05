@@ -21,8 +21,9 @@ use mango::{
 };
 
 #[tokio::test]
-async fn test_deposit_srm() {
-    // Test that the DepositSrm instruction succeeds in the simple case
+async fn test_deposit_and_withdraw_srm() {
+    // Test that Deposit and Withdraw works
+    // Test that Withdraw fails if you withdraw more than deposit
     let program_id = Pubkey::new_unique();
 
     let mut test = ProgramTest::new("mango", program_id, processor!(process_instruction));
@@ -33,6 +34,7 @@ async fn test_deposit_srm() {
     let initial_amount = 500;
     let deposit_amount = 100;
     let withdraw_amount = 10;
+    let excess_withdraw_amount = 1000;
 
     let user = Keypair::new();
     let user_pk = user.pubkey();
@@ -137,5 +139,24 @@ async fn test_deposit_srm() {
         )
         .unwrap();
         assert_eq!(mango_srm_account.amount, deposit_amount - withdraw_amount);
+    }
+
+    {
+        let mut transaction = Transaction::new_with_payer(
+            &[withdraw_srm(
+                &program_id,
+                &mango_group.mango_group_pk,
+                &mango_srm_account_pk,
+                &user_pk,
+                &user_srm_account.pubkey,
+                &mango_group.srm_vault.pubkey,
+                &mango_group.signer_pk,
+                excess_withdraw_amount,
+            )
+            .unwrap()],
+            Some(&payer.pubkey()),
+        );
+        transaction.sign(&[&user, &payer], recent_blockhash);
+        assert!(banks_client.process_transaction(transaction).await.is_err());
     }
 }
