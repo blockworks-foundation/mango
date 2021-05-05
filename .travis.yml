@@ -2,6 +2,7 @@ dist: bionic
 language: rust
 rust:
   - 1.51.0
+cache: cargo
 os: linux
 addons:
   apt:
@@ -17,6 +18,6 @@ jobs:
     - name: Unit Tests
       script:
         - cargo test
-      name: Integration Tests
+    - name: Integration Tests
       script:
         - cargo test-bpf
