@@ -15,9 +15,7 @@ before_script:
   - cd program
 jobs:
   include:
-    - name: Unit Tests
+    - name: Run Tests
       script:
         - cargo test
-    - name: Integration Tests
-      script:
         - cargo test-bpf
