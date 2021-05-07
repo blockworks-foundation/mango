@@ -171,6 +171,9 @@ async fn test_settle_borrow_succeeds() {
         .unwrap();
         // Test borrow is removed from the margin account
         assert_eq!(margin_account.borrows[borrow_token_index], 0);
+
+        //Test has_borrows flag is set correctly
+        assert_eq!(margin_account.has_borrows, false);
       
         let mut mango_group = banks_client
             .get_account(mango_group_pk)
