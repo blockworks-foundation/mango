@@ -1623,7 +1623,7 @@ fn checked_sub_deposit(
     quantity: U64F64
 ) -> MangoResult<()> {
     margin_account.checked_sub_deposit(token_index, quantity)?;
-    mango_group.checked_sub_deposit(token_index, quantity)?
+    mango_group.checked_sub_deposit(token_index, quantity)
 }
 
 fn checked_sub_borrow(
