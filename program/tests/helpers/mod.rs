@@ -28,6 +28,8 @@ use mango::processor::srm_token;
 use mango::instruction::init_mango_group;
 use mango::state::MangoGroup;
 
+pub const PRICE_BTC: u64 = 50000;
+pub const PRICE_ETH: u64 = 2000;
 
 trait AddPacked {
     fn add_packable_account<T: Pack>(
@@ -288,8 +290,8 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
     let eth_usdt_dex = add_dex_empty(test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
 
     let unit = 10u64.pow(6);
-    let btc_usdt = add_aggregator(test, "BTC:USDT", 6, 50_000 * unit, &program_id);
-    let eth_usdt = add_aggregator(test, "ETH:USDT", 6, 2_000 * unit, &program_id);
+    let btc_usdt = add_aggregator(test, "BTC:USDT", 6, PRICE_BTC * unit, &program_id);
+    let eth_usdt = add_aggregator(test, "ETH:USDT", 6, PRICE_ETH * unit, &program_id);
 
     let mints = vec![btc_mint, eth_mint, usdt_mint];
     let vaults = vec![btc_vault, eth_vault, usdt_vault];
