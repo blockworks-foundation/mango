@@ -1854,7 +1854,7 @@ dependencies = [
 
 [[package]]
 name = "mango"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "arrayref",
  "bincode",
