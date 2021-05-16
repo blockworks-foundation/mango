@@ -1366,6 +1366,10 @@ impl Processor {
         let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
+        
+        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
+        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
+        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
 
         let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
         let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
