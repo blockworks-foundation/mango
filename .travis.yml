@@ -1,0 +1,21 @@
+dist: bionic
+language: rust
+rust:
+  - 1.51.0
+cache: cargo
+os: linux
+addons:
+  apt:
+    packages:
+    - libudev-dev
+    - libssl-dev
+before_script:
+  - sh -c "$(curl -sSfL https://release.solana.com/v1.6.4/install)"
+  - export PATH="/home/travis/.local/share/solana/install/active_release/bin:$PATH"
+  - cd program
+jobs:
+  include:
+    - name: Run Tests
+      script:
+        - cargo test
+        - cargo test-bpf
