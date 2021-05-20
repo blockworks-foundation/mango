@@ -468,6 +468,10 @@ impl Processor {
             &mango_group, &prices, open_orders_accs
         )?;
 
+        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
+        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
+        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
+
         // No liquidations if account above maint collateral ratio
         check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
 
@@ -1355,6 +1359,10 @@ impl Processor {
         let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
+        
+        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
+        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
+        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
@@ -1905,7 +1913,7 @@ fn get_in_out_quantities(
     liqor_max_in: u64
 ) -> MangoResult<(u64, u64)> {
     let deficit_val = margin_account.get_partial_liq_deficit(&mango_group, &prices, open_orders_accs)? + ONE_U64F64;
-    let out_avail: U64F64 = margin_account.deposits[out_token_index] * mango_group.indexes[out_token_index].deposit;
+    let out_avail: U64F64 = margin_account.deposits[out_token_index].checked_mul(mango_group.indexes[out_token_index].deposit).unwrap();
     let out_avail_val = out_avail * prices[out_token_index];
 
     // liq incentive is max of 1/2 the dist between
@@ -1916,7 +1924,8 @@ fn get_in_out_quantities(
 
     // we know prices are not 0; if they are this will error;
     let max_in: U64F64 = max_in_val / prices[in_token_index];
-    let native_borrow = margin_account.borrows[in_token_index] * mango_group.indexes[in_token_index].borrow;
+    let native_borrow = margin_account.borrows[in_token_index].checked_mul(
+        mango_group.indexes[in_token_index].borrow).unwrap();
 
     // Can only deposit as much there is borrows to offset in in_token
     let in_quantity = min(min(max_in, native_borrow), U64F64::from_num(liqor_max_in));
@@ -1926,7 +1935,7 @@ fn get_in_out_quantities(
     checked_sub_borrow(mango_group, margin_account, in_token_index, deposit)?;
 
     // Withdraw incentive funds to liqor
-    let in_val: U64F64 = in_quantity * prices[in_token_index];
+    let in_val: U64F64 = in_quantity.checked_mul(prices[in_token_index]).unwrap();
     let out_val: U64F64 = in_val * PARTIAL_LIQ_INCENTIVE;
     let out_quantity: U64F64 = out_val / prices[out_token_index];
 
