@@ -275,7 +275,7 @@ pub struct MarginAccount {
 
     pub being_liquidated: bool,
     pub has_borrows: bool, // does the account have any open borrows? set by checked_add_borrow and checked_sub_borrow
-    pub padding: [u8; 6] // padding to make compatible with previous MarginAccount size
+    pub padding: [u8; 64] // padding
 }
 impl_loadable!(MarginAccount);
 
