@@ -16,7 +16,7 @@ use fixed_macro::types::U64F64;
 use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, MangoError};
 
 /// Initially launching with BTC/USDT, ETH/USDT
-pub const NUM_TOKENS: usize = 3;
+pub const NUM_TOKENS: usize = 5;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
 pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
 pub const MINUTE: u64 = 60;
