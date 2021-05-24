@@ -572,6 +572,9 @@ impl Processor {
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
 
+        // Check if SRM is part of the MangoGroup, if so throw err
+        check!(mango_group.get_token_index(&srm_token::ID).is_none(), MangoErrorCode::FeeDiscountFunctionality)?;
+
         // if MangoSrmAccount is empty, initialize it
         check_eq_default!(mango_srm_account_acc.data_len(), size_of::<MangoSrmAccount>())?;
         let mut mango_srm_account = MangoSrmAccount::load_mut(mango_srm_account_acc)?;
@@ -633,6 +636,10 @@ impl Processor {
         ] = accounts;
 
         let mut mango_group = MangoGroup::load_mut_checked(mango_group_acc, program_id)?;
+
+        // Check if SRM is part of the MangoGroup, if so throw err
+        check!(mango_group.get_token_index(&srm_token::ID).is_none(), MangoErrorCode::FeeDiscountFunctionality)?;
+
         let mut mango_srm_account = MangoSrmAccount::load_mut_checked(
             program_id, mango_srm_account_acc, mango_group_acc.key)?;
 
@@ -1359,7 +1366,7 @@ impl Processor {
         let prices = get_prices(&mango_group, oracle_accs)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
-        
+
         let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
         let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
         msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
@@ -1931,4 +1938,3 @@ fn get_in_out_quantities(
 
     Ok((in_quantity.checked_ceil().unwrap().to_num(), out_quantity.checked_floor().unwrap().to_num()))
 }
-
