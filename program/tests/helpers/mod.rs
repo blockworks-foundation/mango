@@ -30,6 +30,9 @@ use mango::state::MangoGroup;
 
 pub const PRICE_BTC: u64 = 50000;
 pub const PRICE_ETH: u64 = 2000;
+pub const PRICE_SOL: u64 = 30;
+pub const PRICE_SRM: u64 = 5;
+pub const PRICE_RAY: u64 = 5;
 
 trait AddPacked {
     fn add_packable_account<T: Pack>(
@@ -276,28 +279,88 @@ pub fn add_mango_group_prodlike(test: &mut ProgramTest, program_id: Pubkey) -> T
 
     let btc_mint = add_mint(test, 6);
     let eth_mint = add_mint(test, 6);
+    let sol_mint = add_mint(test, 6);
+    let srm_mint = add_mint_srm(test);
+    let srm_mint_token = add_mint_srm(test);
     let usdt_mint = add_mint(test, 6);
 
     let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey, 0);
     let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey, 0);
-    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey, 0);
-
-    let srm_mint = add_mint_srm(test);
+    let sol_vault = add_token_account(test, signer_pk, sol_mint.pubkey, 0);
     let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey, 0);
+    let srm_vault_token = add_token_account(test, signer_pk, srm_mint.pubkey, 0);
+    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey, 0);
 
     let dex_prog_id = Pubkey::new_unique();
     let btc_usdt_dex = add_dex_empty(test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
     let eth_usdt_dex = add_dex_empty(test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let sol_usdt_dex = add_dex_empty(test, sol_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let srm_usdt_dex = add_dex_empty(test, srm_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
 
     let unit = 10u64.pow(6);
     let btc_usdt = add_aggregator(test, "BTC:USDT", 6, PRICE_BTC * unit, &program_id);
     let eth_usdt = add_aggregator(test, "ETH:USDT", 6, PRICE_ETH * unit, &program_id);
+    let sol_usdt = add_aggregator(test, "SOL:USDT", 6, PRICE_SOL * unit, &program_id);
+    let srm_usdt = add_aggregator(test, "SRM:USDT", 6, PRICE_SRM * unit, &program_id);
 
-    let mints = vec![btc_mint, eth_mint, usdt_mint];
-    let vaults = vec![btc_vault, eth_vault, usdt_vault];
-    let dexes = vec![btc_usdt_dex, eth_usdt_dex];
-    let oracles = vec![btc_usdt, eth_usdt];
-    let borrow_limits = vec![100, 100, 100];
+    let mints = vec![btc_mint, eth_mint, sol_mint, srm_mint_token, usdt_mint];
+    let vaults = vec![btc_vault, eth_vault, sol_vault, srm_vault_token, usdt_vault];
+    let dexes = vec![btc_usdt_dex, eth_usdt_dex, sol_usdt_dex, srm_usdt_dex];
+    let oracles = vec![btc_usdt, eth_usdt, sol_usdt, srm_usdt];
+    let borrow_limits = vec![100, 100, 100, 100, 100];
+
+    TestMangoGroup {
+        program_id,
+        mango_group_pk,
+        signer_pk,
+        signer_nonce,
+        mints,
+        vaults,
+        srm_mint,
+        srm_vault,
+        dex_prog_id,
+        dexes,
+        oracles,
+        borrow_limits,
+    }
+}
+
+pub fn add_mango_group_nosrm(test: &mut ProgramTest, program_id: Pubkey) -> TestMangoGroup {
+    let mango_group_pk = Pubkey::new_unique();
+    let (signer_pk, signer_nonce) = create_signer_key_and_nonce(&program_id, &mango_group_pk);
+    test.add_account(mango_group_pk, Account::new(u32::MAX as u64, size_of::<MangoGroup>(), &program_id));
+
+    let btc_mint = add_mint(test, 6);
+    let eth_mint = add_mint(test, 6);
+    let sol_mint = add_mint(test, 6);
+    let srm_mint = add_mint_srm(test);
+    let ray_mint = add_mint(test, 6);
+    let usdt_mint = add_mint(test, 6);
+
+    let btc_vault = add_token_account(test, signer_pk, btc_mint.pubkey, 0);
+    let eth_vault = add_token_account(test, signer_pk, eth_mint.pubkey, 0);
+    let sol_vault = add_token_account(test, signer_pk, sol_mint.pubkey, 0);
+    let srm_vault = add_token_account(test, signer_pk, srm_mint.pubkey, 0);
+    let ray_vault = add_token_account(test, signer_pk, ray_mint.pubkey, 0);
+    let usdt_vault = add_token_account(test, signer_pk, usdt_mint.pubkey, 0);
+
+    let dex_prog_id = Pubkey::new_unique();
+    let btc_usdt_dex = add_dex_empty(test, btc_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let eth_usdt_dex = add_dex_empty(test, eth_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let sol_usdt_dex = add_dex_empty(test, sol_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+    let ray_usdt_dex = add_dex_empty(test, ray_mint.pubkey, usdt_mint.pubkey, dex_prog_id);
+
+    let unit = 10u64.pow(6);
+    let btc_usdt = add_aggregator(test, "BTC:USDT", 6, PRICE_BTC * unit, &program_id);
+    let eth_usdt = add_aggregator(test, "ETH:USDT", 6, PRICE_ETH * unit, &program_id);
+    let sol_usdt = add_aggregator(test, "SOL:USDT", 6, PRICE_SOL * unit, &program_id);
+    let ray_usdt = add_aggregator(test, "RAY:USDT", 6, PRICE_RAY * unit, &program_id);
+
+    let mints = vec![btc_mint, eth_mint, sol_mint, ray_mint, usdt_mint];
+    let vaults = vec![btc_vault, eth_vault, sol_vault, ray_vault, usdt_vault];
+    let dexes = vec![btc_usdt_dex, eth_usdt_dex, sol_usdt_dex, ray_usdt_dex];
+    let oracles = vec![btc_usdt, eth_usdt, sol_usdt, ray_usdt];
+    let borrow_limits = vec![100, 100, 100, 100, 100];
 
     TestMangoGroup {
         program_id,
