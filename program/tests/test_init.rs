@@ -33,7 +33,7 @@ async fn test_init_mango_group() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(20_000);
+    test.set_bpf_compute_max_units(50_000);
 
     let mango_group = add_mango_group_prodlike(&mut test, program_id);
 
@@ -66,7 +66,7 @@ async fn test_init_margin_account() {
     );
 
     // limit to track compute unit increase
-    test.set_bpf_compute_max_units(20_000);
+    test.set_bpf_compute_max_units(50_000);
 
     let mango_group = add_mango_group_prodlike(&mut test, program_id);
     let margin_account_pk = Pubkey::new_unique();
