@@ -270,21 +270,32 @@ pub fn start(opts: Opts) -> Result<()> {
                 |token| (token.clone(), get_symbol_pk(symbols, token.as_str()).to_string())
             ).collect();
 
-            // Create vaults owned by mango program id
+            // Create vaults owned by mango program id and check if SRM in mango group
+            let srm_mint_pk = get_symbol_pk(symbols, "SRM");
+            let mut srm_in_mango_group_index: Option<usize> = None;
             let mut vault_pks = vec![];
             for i in 0..mint_pks.len() {
                 println!("Creating vault for: {}", &tokens[i]);
                 let vault_pk = create_token_account(
                     &client, &mint_pks[i], &signer_key, &payer
                 )?.pubkey();
+                if &mint_pks[i] == &srm_mint_pk {
+                    srm_in_mango_group_index = Some(i);
+                }
                 vault_pks.push(vault_pk);
             }
 
-            let srm_mint_pk = get_symbol_pk(symbols, "SRM");
-            println!("Creating vault for: SRM");
-            let srm_vault_pk = create_token_account(
-                &client, &srm_mint_pk, &signer_key, &payer
-            )?.pubkey();
+            // If SRM is in mango group don't create a new vault for it, instead use existing
+            let srm_vault_pk: Pubkey;
+            if srm_in_mango_group_index.is_some() {
+                println!("Reusing existing vault for: SRM");
+                srm_vault_pk = vault_pks[srm_in_mango_group_index.unwrap()];
+            } else {
+                println!("Creating vault for: SRM");
+                srm_vault_pk = create_token_account(
+                    &client, &srm_mint_pk, &signer_key, &payer
+                )?.pubkey();
+            };
 
             println!("set up spot markets");
             // Find corresponding spot markets
