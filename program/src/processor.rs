@@ -464,13 +464,32 @@ impl Processor {
         }
 
         let prices = get_prices(&mango_group, oracle_accs)?;
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs
-        )?;
 
-        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
+        // Need assets and liabs for logging. Calculate collateral ratio from them to save compute cost of calling liqee_margin_account.get_collateral_ratio
+        let assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
+        let liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
+        
+        let mut assets_val: U64F64 = ZERO_U64F64;
+        let mut liabs_val: U64F64 = ZERO_U64F64;
+        for i in 0..NUM_TOKENS {
+            liabs_val +=  U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
+            assets_val +=  U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
+        }
+
+        let coll_ratio: U64F64;
+        if liabs_val == ZERO_U64F64 {
+            coll_ratio = U64F64::MAX;
+        } else {
+            coll_ratio = assets_val / liabs_val;
+        }
+
+        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
+        let mut prices_f64 = [0_f64; NUM_TOKENS];
+        for i in 0..NUM_TOKENS {
+            prices_f64[i] = prices[i].to_num::<f64>();
+        }
+
+        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
 
         // No liquidations if account above maint collateral ratio
         check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
@@ -1357,12 +1376,32 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
         let prices = get_prices(&mango_group, oracle_accs)?;
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs)?;
         
-        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
+        // Need assets and liabs for logging. Calculate collateral ratio from them to save compute cost of calling liqee_margin_account.get_collateral_ratio
+        let assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
+        let liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
+        
+        let mut assets_val: U64F64 = ZERO_U64F64;
+        let mut liabs_val: U64F64 = ZERO_U64F64;
+        for i in 0..NUM_TOKENS {
+            liabs_val +=  U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
+            assets_val +=  U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
+        }
+
+        let coll_ratio: U64F64;
+        if liabs_val == ZERO_U64F64 {
+            coll_ratio = U64F64::MAX;
+        } else {
+            coll_ratio = assets_val / liabs_val;
+        }
+
+        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
+        let mut prices_f64 = [0_f64; NUM_TOKENS];
+        for i in 0..NUM_TOKENS {
+            prices_f64[i] = prices[i].to_num::<f64>();
+        }
+
+        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
