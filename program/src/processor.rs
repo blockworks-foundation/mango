@@ -491,10 +491,6 @@ impl Processor {
 
         msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
 
-        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
-
         // No liquidations if account above maint collateral ratio
         check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
 
@@ -1413,10 +1409,6 @@ impl Processor {
         }
 
         msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
-
-        let starting_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let starting_liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", starting_assets, starting_liabs, prices, coll_ratio, 0);
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
