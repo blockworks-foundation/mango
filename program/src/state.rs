@@ -10,6 +10,7 @@ use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
+use solana_program::msg;
 
 use fixed_macro::types::U64F64;
 
@@ -342,6 +343,39 @@ impl MarginAccount {
             Ok(assets.checked_div( liabs).unwrap())
         }
     }
+
+    pub fn logged_get_coll_ratio(
+        &self,
+        mango_group: &MangoGroup,
+        prices: &[U64F64; NUM_TOKENS],
+        open_orders_accs: &[AccountInfo; NUM_MARKETS]
+    ) -> MangoResult<U64F64> {
+        let assets = self.get_total_assets(&mango_group, open_orders_accs)?;
+        let liabs = self.get_total_liabs(&mango_group)?;
+
+        let mut assets_val: U64F64 = ZERO_U64F64;
+        let mut liabs_val: U64F64 = ZERO_U64F64;
+        for i in 0..NUM_TOKENS {
+            liabs_val += U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
+            assets_val += U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
+        }
+
+        let coll_ratio = if liabs_val == ZERO_U64F64 {
+            U64F64::MAX
+        } else {
+            assets_val.checked_div(liabs_val).unwrap()
+        };
+
+        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
+        let mut prices_f64 = [0_f64; NUM_TOKENS];
+        for i in 0..NUM_TOKENS {
+            prices_f64[i] = prices[i].to_num::<f64>();
+        }
+
+        msg!("account details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
+        Ok(coll_ratio)
+    }
+
     pub fn get_total_assets(
         &self,
         mango_group: &MangoGroup,
