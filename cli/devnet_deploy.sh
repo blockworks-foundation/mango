@@ -1,7 +1,7 @@
 # devnet
 if [ $# -eq 0 ]
   then
-    KEYPAIR=~/.config/solana/id.json
+    KEYPAIR=~/.config/solana/devnet.json
   else
     KEYPAIR=$1
 fi
@@ -25,9 +25,9 @@ popd
 cd cli
 
 CLUSTER=devnet
-TOKENS="BTC ETH USDT"
-MANGO_GROUP_NAME=BTC_ETH_USDT
-BORROW_LIMITS="1.0 20.0 50000.0"
+TOKENS="BTC ETH SOL SRM USDC"
+MANGO_GROUP_NAME=BTC_ETH_SOL_SRM_USDC
+BORROW_LIMITS="0.0 0.0 0.0 0.0 0.0"
 
 # This will deploy the BTC_ETH_USDT mango group and automatically update the ids.json in mango client
 # Make sure IDS_PATH is set correctly in mango/cli/devnet.env, or set it again before running this
