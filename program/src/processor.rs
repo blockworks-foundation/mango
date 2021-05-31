@@ -456,42 +456,18 @@ impl Processor {
             program_id, liqee_margin_account_acc, mango_group_acc.key
         )?;
         let clock = Clock::from_account_info(clock_acc)?;
-        mango_group.update_indexes(&clock)?;
+        mango_group.update_indexes(&clock)?;  // TODO consider removing this for compute limit
 
         for i in 0..NUM_MARKETS {
             check_eq_default!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
             check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
         }
-
         let prices = get_prices(&mango_group, oracle_accs)?;
 
-        // Need assets and liabs for logging. Calculate collateral ratio from them to save compute cost of calling liqee_margin_account.get_collateral_ratio
-        let assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        
-        let mut assets_val: U64F64 = ZERO_U64F64;
-        let mut liabs_val: U64F64 = ZERO_U64F64;
-        for i in 0..NUM_TOKENS {
-            liabs_val +=  U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
-            assets_val +=  U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
-        }
-
-        let coll_ratio: U64F64;
-        if liabs_val == ZERO_U64F64 {
-            coll_ratio = U64F64::MAX;
-        } else {
-            coll_ratio = assets_val / liabs_val;
-        }
-
-        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
-        let mut prices_f64 = [0_f64; NUM_TOKENS];
-        for i in 0..NUM_TOKENS {
-            prices_f64[i] = prices[i].to_num::<f64>();
-        }
-
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
-
         // No liquidations if account above maint collateral ratio
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs
+        )?;
         check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
 
         // Settle borrows to see if it gets us above maint
@@ -499,10 +475,14 @@ impl Processor {
             let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
             settle_borrow_unchecked(&mut mango_group, &mut liqee_margin_account, i, native_borrow)?;
         }
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs
-        )?;
-        if coll_ratio >= mango_group.maint_coll_ratio {  // if account not liquidatable after settle borrow, then return
+
+        let coll_ratio = liqee_margin_account.logged_get_coll_ratio(&mango_group, &prices, open_orders_accs)?;
+        // let coll_ratio = liqee_margin_account.get_collateral_ratio(
+        //     &mango_group, &prices, open_orders_accs
+        // )?;
+
+        // if account not liquidatable after settle borrow, then save the state and return
+        if coll_ratio >= mango_group.maint_coll_ratio {
             return Ok(())
         }
 
@@ -539,21 +519,14 @@ impl Processor {
 
             let vault_acc: &AccountInfo = &vault_accs[i];
             check_eq_default!(&mango_group.vaults[i], vault_acc.key)?;
-            let token_account_acc: &AccountInfo = &liqor_token_account_accs[i];
-            let deposit_instruction = spl_token::instruction::transfer(
-                &spl_token::id(),
-                token_account_acc.key,
-                vault_acc.key,
-                &liqor_acc.key, &[], quantity
+            invoke_transfer(
+                token_prog_acc,
+                &liqor_token_account_accs[i],
+                vault_acc,
+                liqor_acc,
+                &[],
+                quantity
             )?;
-            let deposit_accs = [
-                token_account_acc.clone(),
-                vault_acc.clone(),
-                liqor_acc.clone(),
-                token_prog_acc.clone()
-            ];
-
-            solana_program::program::invoke_signed(&deposit_instruction, &deposit_accs, &[])?;
             let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[i].deposit;
             checked_add_deposit(&mut mango_group, &mut liqee_margin_account, i, deposit)?;
         }
@@ -1381,34 +1354,11 @@ impl Processor {
         }
 
         let clock = Clock::from_account_info(clock_acc)?;
-        mango_group.update_indexes(&clock)?;
+        mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
         let prices = get_prices(&mango_group, oracle_accs)?;
-        
-        // Need assets and liabs for logging. Calculate collateral ratio from them to save compute cost of calling liqee_margin_account.get_collateral_ratio
-        let assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs).unwrap();
-        let liabs = liqee_margin_account.get_total_liabs(&mango_group).unwrap();
-        
-        let mut assets_val: U64F64 = ZERO_U64F64;
-        let mut liabs_val: U64F64 = ZERO_U64F64;
-        for i in 0..NUM_TOKENS {
-            liabs_val +=  U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
-            assets_val +=  U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
-        }
 
-        let coll_ratio: U64F64;
-        if liabs_val == ZERO_U64F64 {
-            coll_ratio = U64F64::MAX;
-        } else {
-            coll_ratio = assets_val / liabs_val;
-        }
-
-        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
-        let mut prices_f64 = [0_f64; NUM_TOKENS];
-        for i in 0..NUM_TOKENS {
-            prices_f64[i] = prices[i].to_num::<f64>();
-        }
-
-        msg!("Liquidation details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+            &mango_group, &prices, open_orders_accs)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
@@ -1426,7 +1376,7 @@ impl Processor {
         }
 
         // Check again to see if account still liquidatable
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
+        let coll_ratio = liqee_margin_account.logged_get_coll_ratio(
             &mango_group, &prices, open_orders_accs)?;
 
         if liqee_margin_account.being_liquidated {
