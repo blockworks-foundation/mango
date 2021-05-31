@@ -1403,7 +1403,6 @@ impl Processor {
         invoke_transfer(token_prog_acc, out_vault_acc, liqor_out_token_acc, signer_acc,
                         &[&signers_seeds], out_quantity)?;
 
-
         // Check if account valid now
         let coll_ratio = liqee_margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
         if coll_ratio >= mango_group.init_coll_ratio {
@@ -1426,6 +1425,7 @@ impl Processor {
             }
         }
         // TODO do I need to check total deposits and total borrows?
+        // TODO log deposit indexes before and after liquidation as a way to measure socialize of losses
         Ok(())
     }
 
