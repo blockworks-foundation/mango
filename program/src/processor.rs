@@ -19,6 +19,7 @@ use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
+use solana_program::log::sol_log_compute_units;
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
@@ -426,119 +427,11 @@ impl Processor {
 
     #[inline(never)]
     fn liquidate(
-        program_id: &Pubkey,
-        accounts: &[AccountInfo],
-        deposit_quantities: [u64; NUM_TOKENS]
+        _program_id: &Pubkey,
+        _accounts: &[AccountInfo],
+        _deposit_quantities: [u64; NUM_TOKENS]
     ) -> MangoResult<()> {
-        const NUM_FIXED: usize = 5;
-        let accounts = array_ref![accounts, 0, NUM_FIXED + 2 * NUM_MARKETS + 2 * NUM_TOKENS];
-        let (
-            fixed_accs,
-            open_orders_accs,
-            oracle_accs,
-            vault_accs,
-            liqor_token_account_accs,
-        ) = array_refs![accounts, NUM_FIXED, NUM_MARKETS, NUM_MARKETS, NUM_TOKENS, NUM_TOKENS];
-
-        let [
-            mango_group_acc,
-            liqor_acc,
-            liqee_margin_account_acc,
-            token_prog_acc,
-            clock_acc
-        ] = fixed_accs;
-
-        check_default!(liqor_acc.is_signer)?;
-        let mut mango_group = MangoGroup::load_mut_checked(
-            mango_group_acc, program_id
-        )?;
-        let mut liqee_margin_account = MarginAccount::load_mut_checked(
-            program_id, liqee_margin_account_acc, mango_group_acc.key
-        )?;
-        let clock = Clock::from_account_info(clock_acc)?;
-        mango_group.update_indexes(&clock)?;  // TODO consider removing this for compute limit
-
-        for i in 0..NUM_MARKETS {
-            check_eq_default!(open_orders_accs[i].key, &liqee_margin_account.open_orders[i])?;
-            check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
-        }
-        let prices = get_prices(&mango_group, oracle_accs)?;
-
-        // No liquidations if account above maint collateral ratio
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs
-        )?;
-        check!(coll_ratio < mango_group.maint_coll_ratio, MangoErrorCode::NotLiquidatable)?;
-
-        // Settle borrows to see if it gets us above maint
-        for i in 0..NUM_TOKENS {
-            let native_borrow = liqee_margin_account.get_native_borrow(&mango_group.indexes[i], i);
-            settle_borrow_unchecked(&mut mango_group, &mut liqee_margin_account, i, native_borrow)?;
-        }
-
-        let coll_ratio = liqee_margin_account.logged_get_coll_ratio(&mango_group, &prices, open_orders_accs)?;
-        // let coll_ratio = liqee_margin_account.get_collateral_ratio(
-        //     &mango_group, &prices, open_orders_accs
-        // )?;
-
-        // if account not liquidatable after settle borrow, then save the state and return
-        if coll_ratio >= mango_group.maint_coll_ratio {
-            return Ok(())
-        }
-
-        // TODO liquidator may forcefully SettleFunds and SettleBorrow on account with less than maint
-
-        if coll_ratio < ONE_U64F64 {
-            let liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
-            let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
-            let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
-
-            // reduction_val = amount of quote currency value to reduce liabilities by to get coll_ratio = 1.01
-            let reduction_val = liabs_val
-                .checked_sub(assets_val / LIQ_MIN_COLL_RATIO).unwrap();
-
-            for i in 0..NUM_TOKENS {
-                let proportion = U64F64::from_num(liabs[i])
-                    .checked_div(liabs_val).unwrap();
-
-                let token_reduce = proportion.checked_mul(reduction_val).unwrap();
-                socialize_loss(&mut mango_group, &mut liqee_margin_account, i, token_reduce)?;
-                // TODO this will reduce deposits of liqee as well which could put actual value below; way to fix is to SettleBorrow first
-                // TODO Can socialize loss cause more liquidations? Perhaps other accounts then go below threshold
-                // TODO what happens if unable to socialize loss? If not enough deposits in currency
-            }
-        }
-
-        // Pull deposits from liqor's token wallets
-        check_eq_default!(token_prog_acc.key, &spl_token::id())?;
-        for i in 0..NUM_TOKENS {
-            let quantity = deposit_quantities[i];
-            if quantity == 0 {
-                continue;
-            }
-
-            let vault_acc: &AccountInfo = &vault_accs[i];
-            check_eq_default!(&mango_group.vaults[i], vault_acc.key)?;
-            invoke_transfer(
-                token_prog_acc,
-                &liqor_token_account_accs[i],
-                vault_acc,
-                liqor_acc,
-                &[],
-                quantity
-            )?;
-            let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[i].deposit;
-            checked_add_deposit(&mut mango_group, &mut liqee_margin_account, i, deposit)?;
-        }
-
-        // Check to make sure liqor's deposits brought account above init_coll_ratio
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
-        check_default!(coll_ratio >= mango_group.init_coll_ratio)?;
-
-        // If all deposits are good, transfer ownership of margin account to liqor
-        liqee_margin_account.owner = *liqor_acc.key;
-
-        Ok(())
+        throw_err!(MangoErrorCode::Deprecated)
     }
 
     #[inline(never)]
@@ -1356,9 +1249,12 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
         let prices = get_prices(&mango_group, oracle_accs)?;
-
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs)?;
+        let start_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs)?;
+        let start_liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
+        let coll_ratio = liqee_margin_account.coll_ratio_from_assets_liabs(
+            &prices, &start_assets, &start_liabs)?;
+        // let coll_ratio = liqee_margin_account.get_collateral_ratio(
+        //     &mango_group, &prices, open_orders_accs)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
@@ -1376,7 +1272,7 @@ impl Processor {
         }
 
         // Check again to see if account still liquidatable
-        let coll_ratio = liqee_margin_account.logged_get_coll_ratio(
+        let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
 
         if liqee_margin_account.being_liquidated {
@@ -1404,26 +1300,56 @@ impl Processor {
                         &[&signers_seeds], out_quantity)?;
 
         // Check if account valid now
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(&mango_group, &prices, open_orders_accs)?;
+        sol_log_compute_units();
+        let end_assets = liqee_margin_account.get_total_assets(&mango_group, open_orders_accs)?;
+        let end_liabs = liqee_margin_account.get_total_liabs(&mango_group)?;
+        let coll_ratio = liqee_margin_account.coll_ratio_from_assets_liabs(
+            &prices, &end_assets, &end_liabs)?;
+        let mut total_deposits = [0u64; NUM_TOKENS];
+
+        let mut socialized_losses = false;
         if coll_ratio >= mango_group.init_coll_ratio {
             // set margin account to no longer being liquidated
             liqee_margin_account.being_liquidated = false;
         } else {
             // if all asset vals is dust (less than 1 cent?) socialize loss on lenders
             let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
+
             if assets_val < DUST_THRESHOLD {
                 for i in 0..NUM_TOKENS {
-                    let native_borrow = liqee_margin_account.borrows[i] * mango_group.indexes[i].borrow;
+                    let native_borrow: U64F64 = liqee_margin_account.borrows[i] * mango_group.indexes[i].borrow;
+                    let total_deposits_native: U64F64 = mango_group.total_deposits[i] * mango_group.indexes[i].deposit;
+
+                    total_deposits[i] = total_deposits_native.to_num();
+
                     if native_borrow > 0 {
+                        socialized_losses = true;
                         socialize_loss(
                             &mut mango_group,
                             &mut liqee_margin_account,
                             i,
-                            native_borrow)?;
+                            native_borrow,
+                            total_deposits_native
+                        )?;
                     }
                 }
             }
         }
+
+        let mut prices_f64 = [0_f64; NUM_TOKENS];
+        for i in 0..NUM_TOKENS {
+            prices_f64[i] = prices[i].to_num::<f64>();
+        }
+        // Note total_deposits is only logged with reasonable values if assets_val < DUST_THRESHOLD
+        msg!("liquidation details: {{ \
+                \"start\": {{ \"assets\": {:?}, \"liabs\": {:?} }}, \
+                \"end\": {{ \"assets\": {:?}, \"liabs\": {:?} }}, \
+                \"prices\": {:?}, \
+                \"socialized_losses\": {}, \
+                \"total_deposits\": {:?} \
+            }}", start_assets, start_liabs, end_assets, end_liabs, prices_f64, socialized_losses, total_deposits);
+        sol_log_compute_units();
+
         // TODO do I need to check total deposits and total borrows?
         // TODO log deposit indexes before and after liquidation as a way to measure socialize of losses
         Ok(())
@@ -1601,7 +1527,8 @@ fn socialize_loss(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
     token_index: usize,
-    reduce_quantity_native: U64F64
+    reduce_quantity_native: U64F64,
+    total_deposits_native: U64F64
 ) -> MangoResult<()> {
 
     // reduce borrow for this margin_account by appropriate amount
@@ -1611,8 +1538,7 @@ fn socialize_loss(
     let quantity: U64F64 = reduce_quantity_native / mango_group.indexes[token_index].borrow;
     checked_sub_borrow(mango_group, margin_account, token_index, quantity)?;
 
-    let total_deposits = U64F64::from_num(mango_group.get_total_native_deposit(token_index));
-    let percentage_loss = reduce_quantity_native.checked_div(total_deposits).unwrap();
+    let percentage_loss = reduce_quantity_native.checked_div(total_deposits_native).unwrap();
     let index: &mut MangoIndex = &mut mango_group.indexes[token_index];
     index.deposit = index.deposit
         .checked_sub(percentage_loss.checked_mul(index.deposit).unwrap()).unwrap();
