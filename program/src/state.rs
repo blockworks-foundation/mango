@@ -276,7 +276,7 @@ pub struct MarginAccount {
 
     pub being_liquidated: bool,
     pub has_borrows: bool, // does the account have any open borrows? set by checked_add_borrow and checked_sub_borrow
-    pub padding: [u8; 64] // padding
+    pub padding: [u8; 70] // padding
 }
 impl_loadable!(MarginAccount);
 
@@ -344,6 +344,25 @@ impl MarginAccount {
         }
     }
 
+    pub fn coll_ratio_from_assets_liabs(
+        &self,
+        prices: &[U64F64; NUM_TOKENS],
+        assets: &[u64; NUM_TOKENS],
+        liabs: &[u64; NUM_TOKENS]
+    ) -> MangoResult<U64F64> {
+        let mut assets_val: U64F64 = ZERO_U64F64;
+        let mut liabs_val: U64F64 = ZERO_U64F64;
+        for i in 0..NUM_TOKENS {
+            liabs_val += U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
+            assets_val += U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
+        }
+
+        if liabs_val == ZERO_U64F64 {
+            Ok(U64F64::MAX)
+        } else {
+            Ok(assets_val.checked_div(liabs_val).unwrap())
+        }
+    }
     pub fn logged_get_coll_ratio(
         &self,
         mango_group: &MangoGroup,
@@ -371,7 +390,6 @@ impl MarginAccount {
         for i in 0..NUM_TOKENS {
             prices_f64[i] = prices[i].to_num::<f64>();
         }
-
         msg!("account details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
         Ok(coll_ratio)
     }
