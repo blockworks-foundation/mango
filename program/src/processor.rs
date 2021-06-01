@@ -1246,10 +1246,10 @@ impl Processor {
             check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
         }
 
-        sol_log_compute_units();
-        let clock = Clock::from_account_info(clock_acc)?;
-        mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
-        sol_log_compute_units();
+        // sol_log_compute_units();
+        // let clock = Clock::from_account_info(clock_acc)?;
+        // mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
+        // sol_log_compute_units();
 
         let prices = get_prices(&mango_group, oracle_accs)?;
         let start_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
@@ -1315,18 +1315,17 @@ impl Processor {
             liqee_margin_account.being_liquidated = false;
         } else {
             // if all asset vals is dust (less than 1 cent?) socialize loss on lenders
-            let assets_val = dot_product(&end_assets, &prices);
+            let assets_val = liqee_margin_account.get_assets_val(&mango_group, &prices, open_orders_accs)?;
 
             if assets_val < DUST_THRESHOLD {
                 for i in 0..NUM_TOKENS {
-                    let native_borrow: U64F64 = liqee_margin_account.borrows[i] * mango_group.indexes[i].borrow;
+                    let native_borrow: U64F64 = end_liabs[i];
                     let total_deposits_native: U64F64 = mango_group.total_deposits[i] * mango_group.indexes[i].deposit;
 
                     total_deposits[i] = total_deposits_native;
 
                     if native_borrow > 0 {
                         socialized_losses = true;
-
                         socialize_loss(
                             &mut mango_group,
                             &mut liqee_margin_account,
@@ -1340,8 +1339,9 @@ impl Processor {
         }
 
         // Note total_deposits is only logged with reasonable values if assets_val < DUST_THRESHOLD
+        sol_log_compute_units();
         log_liquidation_details(&start_assets, &start_liabs, &end_assets, &end_liabs, &prices, socialized_losses, &total_deposits);
-
+        sol_log_compute_units();
         // TODO do I need to check total deposits and total borrows?
         // TODO log deposit indexes before and after liquidation as a way to measure socialize of losses
         Ok(())
@@ -1463,7 +1463,7 @@ impl Processor {
     }
 }
 
-#[inline(always)]
+
 fn dot_product(a: &[U64F64; NUM_TOKENS], b: &[U64F64; NUM_TOKENS]) -> U64F64 {
     let mut val = ZERO_U64F64;
     for i in 0..NUM_TOKENS {
@@ -1472,7 +1472,7 @@ fn dot_product(a: &[U64F64; NUM_TOKENS], b: &[U64F64; NUM_TOKENS]) -> U64F64 {
     val
 }
 
-#[inline(always)]
+
 fn log_liquidation_details(
     start_assets: &[U64F64; NUM_TOKENS],
     start_liabs: &[U64F64; NUM_TOKENS],
@@ -1496,6 +1496,20 @@ fn log_liquidation_details(
         end_liabs_u64[i] = end_liabs[i].to_num();
         total_deposits_u64[i] = total_deposits[i].to_num();
     }
+    // let mut prices_f64 = [0u128; NUM_TOKENS];
+    // let mut start_assets_u64 = [0u128; NUM_TOKENS];
+    // let mut start_liabs_u64 = [0u128; NUM_TOKENS];
+    // let mut end_assets_u64 = [0u128; NUM_TOKENS];
+    // let mut end_liabs_u64 = [0u128; NUM_TOKENS];
+    // let mut total_deposits_u64 = [0u128; NUM_TOKENS];
+    // for i in 0..NUM_TOKENS {
+    //     prices_f64[i] = prices[i].to_bits();
+    //     start_assets_u64[i] = start_assets[i].to_bits();
+    //     start_liabs_u64[i] = start_liabs[i].to_bits();
+    //     end_assets_u64[i] = end_assets[i].to_bits();
+    //     end_liabs_u64[i] = end_liabs[i].to_bits();
+    //     total_deposits_u64[i] = total_deposits[i].to_bits();
+    // }
     // Note total_deposits is only logged with reasonable values if assets_val < DUST_THRESHOLD
     msg!("liquidation details: {{ \
                 \"start\": {{ \"assets\": {:?}, \"liabs\": {:?} }}, \
@@ -1506,7 +1520,6 @@ fn log_liquidation_details(
             }}", start_assets_u64, start_liabs_u64, end_assets_u64, end_liabs_u64, prices_f64, socialized_losses, total_deposits_u64);
 }
 
-#[inline(always)]
 fn settle_borrow_unchecked(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1534,7 +1547,7 @@ fn settle_borrow_unchecked(
 
 }
 
-#[inline(always)]
+
 fn settle_borrow_full_unchecked(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1559,7 +1572,7 @@ fn settle_borrow_full_unchecked(
 
 }
 
-#[inline(always)]
+
 fn socialize_loss(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1583,7 +1596,6 @@ fn socialize_loss(
     Ok(())
 }
 
-#[inline(always)]
 fn checked_sub_deposit(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1594,7 +1606,6 @@ fn checked_sub_deposit(
     mango_group.checked_sub_deposit(token_index, quantity)
 }
 
-#[inline(always)]
 fn checked_sub_borrow(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1615,7 +1626,6 @@ fn checked_sub_borrow(
     Ok(())
 }
 
-#[inline(always)]
 fn checked_add_deposit(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1626,7 +1636,6 @@ fn checked_add_deposit(
     mango_group.checked_add_deposit(token_index, quantity)
 }
 
-#[inline(always)]
 fn checked_add_borrow(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1643,7 +1652,6 @@ fn checked_add_borrow(
     Ok(())
 }
 
-#[inline(always)]
 pub fn get_prices(
     mango_group: &MangoGroup,
     oracle_accs: &[AccountInfo]
@@ -1672,7 +1680,6 @@ pub fn get_prices(
     Ok(prices)
 }
 
-#[inline(never)]
 fn invoke_settle_funds<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1718,7 +1725,6 @@ fn invoke_settle_funds<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
-#[inline(always)]
 fn invoke_cancel_order<'a>(
     dex_prog_acc: &AccountInfo<'a>,
     spot_market_acc: &AccountInfo<'a>,
@@ -1756,7 +1762,6 @@ fn invoke_cancel_order<'a>(
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
 
-#[inline(always)]
 fn invoke_cancel_orders<'a>(
     open_orders_acc: &AccountInfo<'a>,
     dex_prog_acc: &AccountInfo<'a>,
@@ -1843,7 +1848,6 @@ fn invoke_cancel_orders<'a>(
     Ok(())
 }
 
-#[inline(always)]
 fn invoke_transfer<'a>(
     token_prog_acc: &AccountInfo<'a>,
     source_acc: &AccountInfo<'a>,
@@ -1871,7 +1875,6 @@ fn invoke_transfer<'a>(
     solana_program::program::invoke_signed(&transfer_instruction, &accs, signers_seeds)
 }
 
-#[inline(always)]
 fn get_in_out_quantities(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
