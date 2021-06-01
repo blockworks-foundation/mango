@@ -19,7 +19,6 @@ use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
-use solana_program::log::sol_log_compute_units;
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
@@ -1218,7 +1217,7 @@ impl Processor {
             out_vault_acc,
             signer_acc,
             token_prog_acc,
-            clock_acc,
+            _clock_acc,
         ] = fixed_accs;
         check!(token_prog_acc.key == &spl_token::ID, MangoErrorCode::InvalidProgramId)?;
         check!(liqor_acc.is_signer, MangoErrorCode::SignerNecessary)?;
@@ -1340,9 +1339,7 @@ impl Processor {
         }
 
         // Note total_deposits is only logged with reasonable values if assets_val < DUST_THRESHOLD
-        sol_log_compute_units();
         log_liquidation_details(&start_assets, &start_liabs, &end_assets, &end_liabs, &prices, socialized_losses, &total_deposits);
-        sol_log_compute_units();
         // TODO do I need to check total deposits and total borrows?
         // TODO log deposit indexes before and after liquidation as a way to measure socialize of losses
         Ok(())
@@ -1463,16 +1460,6 @@ impl Processor {
         Ok(())
     }
 }
-
-
-fn dot_product(a: &[U64F64; NUM_TOKENS], b: &[U64F64; NUM_TOKENS]) -> U64F64 {
-    let mut val = ZERO_U64F64;
-    for i in 0..NUM_TOKENS {
-        val = a[i].checked_mul(b[i]).unwrap().checked_add(val).unwrap()
-    }
-    val
-}
-
 
 fn log_liquidation_details(
     start_assets: &[U64F64; NUM_TOKENS],
