@@ -881,6 +881,8 @@ impl Processor {
         Ok(())
     }
 
+    /// @jackcmay - this function fails
+    /// https://explorer.solana.com/tx/3UtVMGUrhbAABtAVhnffx4y9txBCosH2CbDS4i5sb17ssY9Ugvc23tk8quiUBvdJ42dLAL34QJi3gi17uVi6YKte?cluster=devnet
     #[inline(never)]
     fn place_and_settle(
         program_id: &Pubkey,
