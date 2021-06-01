@@ -10,7 +10,6 @@ use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
-use solana_program::msg;
 
 use fixed_macro::types::U64F64;
 
@@ -31,7 +30,7 @@ const MAX_R: U64F64 = U64F64!(9.5129375951293759512937e-08); // max 300% APY -> 
 pub const ONE_U64F64: U64F64 = U64F64!(1);
 pub const ZERO_U64F64: U64F64 = U64F64!(0);
 pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
-pub const DUST_THRESHOLD: U64F64 = U64F64!(0.01);  // TODO make this part of MangoGroup state
+pub const DUST_THRESHOLD: U64F64 = U64F64!(100000);  // TODO make this part of MangoGroup state
 pub const EPSILON: U64F64 = U64F64!(1.0e-17);
 
 macro_rules! check_default {
@@ -173,6 +172,7 @@ impl MangoGroup {
         self.vaults.iter().position(|pk| pk == vault)
     }
     /// interest is in units per second (e.g. 0.01 => 1% interest per second)
+    #[inline(always)]
     pub fn get_interest_rate(&self, token_index: usize) -> U64F64 {
         let index: &MangoIndex = &self.indexes[token_index];
         let native_deposits = index.deposit.checked_mul(self.total_deposits[token_index]).unwrap();
@@ -191,6 +191,7 @@ impl MangoGroup {
             slope * utilization
         }
     }
+    #[inline(always)]
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         // TODO verify what happens if total_deposits < total_borrows
         // TODO verify what happens if total_deposits == 0 && total_borrows > 0
@@ -228,30 +229,37 @@ impl MangoGroup {
         }
         Ok(())
     }
-
+    #[inline(always)]
     pub fn has_valid_deposits_borrows(&self, token_i: usize) -> bool {
         self.get_total_native_deposit(token_i) >= self.get_total_native_borrow(token_i)
     }
+    #[inline(always)]
     pub fn get_total_native_borrow(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
         native.checked_ceil().unwrap().to_num()  // rounds toward +inf
     }
+    #[inline(always)]
     pub fn get_total_native_deposit(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
         native.checked_floor().unwrap().to_num()  // rounds toward -inf
     }
+    #[inline(always)]
     pub fn get_market_index(&self, spot_market_pk: &Pubkey) -> Option<usize> {
         self.spot_markets.iter().position(|market| market == spot_market_pk)
     }
+    #[inline(always)]
     pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_add(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_sub(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_add(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
@@ -328,6 +336,7 @@ impl MarginAccount {
         }
     }
 
+    #[inline(always)]
     pub fn get_collateral_ratio(
         &self,
         mango_group: &MangoGroup,
@@ -344,17 +353,18 @@ impl MarginAccount {
         }
     }
 
+    #[inline(always)]
     pub fn coll_ratio_from_assets_liabs(
         &self,
         prices: &[U64F64; NUM_TOKENS],
-        assets: &[u64; NUM_TOKENS],
-        liabs: &[u64; NUM_TOKENS]
+        assets: &[U64F64; NUM_TOKENS],
+        liabs: &[U64F64; NUM_TOKENS]
     ) -> MangoResult<U64F64> {
         let mut assets_val: U64F64 = ZERO_U64F64;
         let mut liabs_val: U64F64 = ZERO_U64F64;
         for i in 0..NUM_TOKENS {
-            liabs_val += U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
-            assets_val += U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
+            liabs_val = liabs[i].checked_mul(prices[i]).unwrap().checked_add(liabs_val).unwrap();
+            assets_val = assets[i].checked_mul(prices[i]).unwrap().checked_add(assets_val).unwrap();
         }
 
         if liabs_val == ZERO_U64F64 {
@@ -363,71 +373,48 @@ impl MarginAccount {
             Ok(assets_val.checked_div(liabs_val).unwrap())
         }
     }
-    pub fn logged_get_coll_ratio(
-        &self,
-        mango_group: &MangoGroup,
-        prices: &[U64F64; NUM_TOKENS],
-        open_orders_accs: &[AccountInfo; NUM_MARKETS]
-    ) -> MangoResult<U64F64> {
-        let assets = self.get_total_assets(&mango_group, open_orders_accs)?;
-        let liabs = self.get_total_liabs(&mango_group)?;
 
-        let mut assets_val: U64F64 = ZERO_U64F64;
-        let mut liabs_val: U64F64 = ZERO_U64F64;
-        for i in 0..NUM_TOKENS {
-            liabs_val += U64F64::from_num(liabs[i]).checked_mul(prices[i]).unwrap();
-            assets_val += U64F64::from_num(assets[i]).checked_mul(prices[i]).unwrap();
-        }
-
-        let coll_ratio = if liabs_val == ZERO_U64F64 {
-            U64F64::MAX
-        } else {
-            assets_val.checked_div(liabs_val).unwrap()
-        };
-
-        // Too expensive to call msg! with an argument of type U64F64 - convert to f64 first
-        let mut prices_f64 = [0_f64; NUM_TOKENS];
-        for i in 0..NUM_TOKENS {
-            prices_f64[i] = prices[i].to_num::<f64>();
-        }
-        msg!("account details: {{ \"assets\": {:?}, \"liabs\": {:?}, \"prices\": {:?}, \"coll_ratio\": {}, \"unused\": {} }}", assets, liabs, prices_f64, coll_ratio.to_num::<f64>(), 0);
-        Ok(coll_ratio)
-    }
-
-    pub fn get_total_assets(
+    #[inline(always)]
+    pub fn get_assets(
         &self,
         mango_group: &MangoGroup,
         open_orders_accs: &[AccountInfo; NUM_MARKETS]
-    ) -> MangoResult<[u64; NUM_TOKENS]> {
-        let mut assets = [0u64; NUM_TOKENS];
+    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
+        let mut assets = [ZERO_U64F64; NUM_TOKENS];
 
         for i in 0..NUM_TOKENS {
-            assets[i] = self.get_native_deposit(&mango_group.indexes[i], i)
+            assets[i] = mango_group.indexes[i].deposit.checked_mul(self.deposits[i]).unwrap()
                 .checked_add(assets[i]).unwrap();
         }
+
         for i in 0..NUM_MARKETS {
             if *open_orders_accs[i].key == Pubkey::default() {
                 continue;
             }
             let open_orders = load_open_orders(&open_orders_accs[i])?;
 
-            assets[i] = open_orders.native_coin_total.checked_add(assets[i]).unwrap();
-            assets[NUM_TOKENS-1] = open_orders.native_pc_total.checked_add(assets[NUM_TOKENS-1]).unwrap();
+            assets[i] = U64F64::from_num(open_orders.native_coin_total).checked_add(assets[i]).unwrap();
+            assets[NUM_TOKENS-1] = U64F64::from_num(open_orders.native_pc_total).checked_add(assets[NUM_TOKENS-1]).unwrap();
         }
         Ok(assets)
     }
 
-    pub fn get_total_liabs(
+    #[inline(always)]
+    pub fn get_liabs(
         &self,
-        mango_group: &MangoGroup
-    ) -> MangoResult<[u64; NUM_TOKENS]> {
-        let mut liabs = [0u64; NUM_TOKENS];
-        for i in 0.. NUM_TOKENS {
-            liabs[i] = self.get_native_borrow(&mango_group.indexes[i], i);
+        mango_group: &MangoGroup,
+    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
+        let mut liabs = [ZERO_U64F64; NUM_TOKENS];
+
+        for i in 0..NUM_TOKENS {
+            liabs[i] = mango_group.indexes[i].borrow.checked_mul(self.borrows[i]).unwrap()
+                .checked_add(liabs[i]).unwrap();
         }
+
         Ok(liabs)
     }
 
+    #[inline(always)]
     pub fn get_assets_val(
         &self,
         mango_group: &MangoGroup,
@@ -448,7 +435,6 @@ impl MarginAccount {
                 .checked_mul(prices[i]).unwrap()
                 .checked_add(U64F64::from_num(open_orders.native_pc_total)).unwrap()
                 .checked_add(assets).unwrap();
-
         }
         for i in 0..NUM_TOKENS {  // add up the value in margin account deposits and positions
             let index: &MangoIndex = &mango_group.indexes[i];
@@ -460,6 +446,8 @@ impl MarginAccount {
         Ok(assets)
 
     }
+
+    #[inline(always)]
     pub fn get_liabs_val(
         &self,
         mango_group: &MangoGroup,
@@ -474,6 +462,7 @@ impl MarginAccount {
         Ok(liabs)
     }
     /// Return amount of quote currency to deposit to get account above init_coll_ratio
+    #[inline(always)]
     pub fn get_collateral_deficit(
         &self,
         mango_group: &MangoGroup,
@@ -490,6 +479,7 @@ impl MarginAccount {
         }
     }
 
+    #[inline(always)]
     pub fn get_partial_liq_deficit(
         &self,
         mango_group: &MangoGroup,
@@ -505,23 +495,28 @@ impl MarginAccount {
             // TODO make this checked
             Ok((liabs * mango_group.init_coll_ratio - assets) / (mango_group.init_coll_ratio - PARTIAL_LIQ_INCENTIVE))
         }
-
     }
+    #[inline(always)]
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()
     }
+    #[inline(always)]
     pub fn get_native_deposit(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.deposits[token_i] * index.deposit).to_num()
     }
+    #[inline(always)]
     pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.borrows[token_i] = self.borrows[token_i].checked_add(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.borrows[token_i] = self.borrows[token_i].checked_sub(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_add(v).ok_or(throw!())?)
     }
+    #[inline(always)]
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
@@ -717,6 +712,7 @@ pub fn load_open_orders<'a>(
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
 
+#[inline(always)]
 pub fn check_open_orders(
     acc: &AccountInfo,
     owner: &Pubkey
