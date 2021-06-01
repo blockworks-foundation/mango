@@ -1246,6 +1246,7 @@ impl Processor {
             check_open_orders(&open_orders_accs[i], &mango_group.signer_key)?;
         }
 
+        // TODO - add a check to make sure indexes were updated in last hour
         // sol_log_compute_units();
         // let clock = Clock::from_account_info(clock_acc)?;
         // mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
