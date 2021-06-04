@@ -308,9 +308,10 @@ pub fn start(opts: Opts) -> Result<()> {
             for i in 0..(tokens.len() - 1) {
                 let base_symbol = tokens[i].as_str();
                 let market_symbol = format!("{}/{}", base_symbol, quote_symbol);
+                println!("{}", market_symbol);
                 spot_market_pks.push(get_symbol_pk(spot_markets, market_symbol.as_str()));
                 oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
-                spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().unwrap().to_string());
+                spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().expect("spot market not found").to_string());
             }
 
             println!("borrow limits");
@@ -689,7 +690,7 @@ fn get_pk(json: &Value, name: &str) -> Pubkey {
 }
 
 fn get_symbol_pk(symbols: &Value, symbol: &str) -> Pubkey {
-    Pubkey::from_str(symbols[symbol].as_str().unwrap()).unwrap()
+    Pubkey::from_str(symbols[symbol].as_str().expect("get_symbol_pk symbol not found")).unwrap()
 }
 
 fn get_vec_pks(value: &Value) -> Vec<Pubkey> {

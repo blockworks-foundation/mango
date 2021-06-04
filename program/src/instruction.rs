@@ -10,7 +10,7 @@ use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::program_error::ProgramError;
 use solana_program::pubkey::Pubkey;
 
-use crate::state::NUM_TOKENS;
+use crate::state::{NUM_TOKENS, INFO_LEN};
 
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -353,6 +353,10 @@ pub enum MangoInstruction {
         max_deposit: u64
     },
 
+
+    AddMarginAccountInfo {
+        info: [u8; INFO_LEN]
+    }
 }
 
 
@@ -496,6 +500,12 @@ impl MangoInstruction {
                 let max_deposit = array_ref![data, 0, 8];
                 MangoInstruction::PartialLiquidate {
                     max_deposit: u64::from_le_bytes(*max_deposit)
+                }
+            }
+            17 => {
+                let info = array_ref![data, 0, INFO_LEN];
+                MangoInstruction::AddMarginAccountInfo {
+                    info: *info
                 }
             }
             _ => { return None; }
@@ -1195,6 +1205,28 @@ pub fn partial_liquidate(
     );
 
     let instr = MangoInstruction::PartialLiquidate { max_deposit };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn add_margin_account_info(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    margin_account_pk: &Pubkey,
+    owner_pk: &Pubkey,
+    info: [u8; INFO_LEN]
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new(*margin_account_pk, false),
+        AccountMeta::new_readonly(*owner_pk, true),
+    ];
+
+    let instr = MangoInstruction::AddMarginAccountInfo { info };
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,
