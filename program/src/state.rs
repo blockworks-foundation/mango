@@ -32,6 +32,8 @@ pub const ZERO_U64F64: U64F64 = U64F64!(0);
 pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
 pub const DUST_THRESHOLD: U64F64 = U64F64!(1);  // TODO make this part of MangoGroup state
 pub const EPSILON: U64F64 = U64F64!(1.0e-17);
+pub const INFO_LEN: usize = 32;
+
 
 macro_rules! check_default {
     ($cond:expr) => {
@@ -281,7 +283,7 @@ pub struct MarginAccount {
     pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
-
+    pub info: [u8; INFO_LEN],
     pub being_liquidated: bool,
     pub has_borrows: bool, // does the account have any open borrows? set by checked_add_borrow and checked_sub_borrow
     pub padding: [u8; 70] // padding

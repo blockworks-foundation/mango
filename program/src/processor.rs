@@ -22,7 +22,7 @@ use spl_token::state::{Account, Mint};
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
-use crate::state::{AccountFlag, check_open_orders, DUST_THRESHOLD, load_asks_mut, load_bids_mut, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, PARTIAL_LIQ_INCENTIVE, ZERO_U64F64};
+use crate::state::{AccountFlag, check_open_orders, DUST_THRESHOLD, load_asks_mut, load_bids_mut, load_market_state, load_open_orders, Loadable, MangoGroup, MangoIndex, MangoSrmAccount, MarginAccount, NUM_MARKETS, NUM_TOKENS, ONE_U64F64, PARTIAL_LIQ_INCENTIVE, ZERO_U64F64, INFO_LEN};
 use crate::utils::{gen_signer_key, gen_signer_seeds};
 
 macro_rules! check_default {
@@ -1345,6 +1345,27 @@ impl Processor {
         Ok(())
     }
 
+    #[inline(never)]
+    fn add_margin_account_info(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        info: [u8; INFO_LEN]
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 3;
+        let accounts = array_ref![accounts, 0, NUM_FIXED];
+        let [
+            mango_group_acc,
+            margin_account_acc,
+            owner_acc,
+        ] = accounts;
+
+        let mut margin_account = MarginAccount::load_mut_checked(
+            program_id, margin_account_acc, mango_group_acc.key)?;
+        check_eq!(owner_acc.key, &margin_account.owner, MangoErrorCode::InvalidMarginAccountOwner)?;
+        check!(owner_acc.is_signer, MangoErrorCode::SignerNecessary)?;
+        margin_account.info = info;
+        Ok(())
+    }
     pub fn process(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -1455,6 +1476,12 @@ impl Processor {
             } => {
                 msg!("Mango: PartialLiquidate");
                 Self::partial_liquidate(program_id, accounts, max_deposit)?;
+            }
+            MangoInstruction::AddMarginAccountInfo {
+                info
+            } => {
+                msg!("Mango: AddMarginAccountInfo");
+                Self::add_margin_account_info(program_id, accounts, info)?;
             }
         }
         Ok(())
