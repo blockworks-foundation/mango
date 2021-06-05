@@ -1562,7 +1562,6 @@ fn settle_borrow_unchecked(
 
 }
 
-
 fn settle_borrow_full_unchecked(
     mango_group: &mut MangoGroup,
     margin_account: &mut MarginAccount,
@@ -1586,7 +1585,6 @@ fn settle_borrow_full_unchecked(
     Ok(())
 
 }
-
 
 fn socialize_loss(
     mango_group: &mut MangoGroup,
