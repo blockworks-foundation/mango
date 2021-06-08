@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -552,7 +552,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1900,7 +1900,7 @@ dependencies = [
 
 [[package]]
 name = "mango"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "arrayref",
  "bincode",
