@@ -1246,18 +1246,25 @@ impl Processor {
         }
 
         // TODO - add a check to make sure indexes were updated in last hour
-        // sol_log_compute_units();
+        //      if not updated, then update indexes and return without continuing
+        //      there is not enough compute to continue
+        //      code is written below but needs to be tested on devnet first
+
         // let clock = Clock::from_account_info(clock_acc)?;
-        // mango_group.update_indexes(&clock)?;  // TODO consider removing for compute limit space
-        // sol_log_compute_units();
+        // let now_ts = clock.unix_timestamp as u64;
+        // for i in 0..NUM_TOKENS {
+        //     if now_ts > mango_group.indexes[i].last_update + 3600 {
+        //         msg!("Invalid indexes");
+        //         mango_group.update_indexes(&clock)?;
+        //         return Ok(());
+        //     }
+        // }
 
         let prices = get_prices(&mango_group, oracle_accs)?;
         let start_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
         let start_liabs = liqee_margin_account.get_liabs(&mango_group)?;
         let coll_ratio = liqee_margin_account.coll_ratio_from_assets_liabs(
             &prices, &start_assets, &start_liabs)?;
-        // let coll_ratio = liqee_margin_account.get_collateral_ratio(
-        //     &mango_group, &prices, open_orders_accs)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
@@ -1281,10 +1288,12 @@ impl Processor {
         if liqee_margin_account.being_liquidated {
             if coll_ratio >= mango_group.init_coll_ratio {
                 // TODO make sure liquidator knows why tx was success but he didn't receive any funds
+                msg!("Account above init_coll_ratio after settling borrows");
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
         } else if coll_ratio >= mango_group.maint_coll_ratio {
+            msg!("Account above maint_coll_ratio after settling borrows");
             return Ok(());
         } else {
             liqee_margin_account.being_liquidated = true;
@@ -1511,21 +1520,7 @@ fn log_liquidation_details(
         end_liabs_u64[i] = end_liabs[i].to_num();
         total_deposits_u64[i] = total_deposits[i].to_num();
     }
-    // let mut prices_f64 = [0u128; NUM_TOKENS];
-    // let mut start_assets_u64 = [0u128; NUM_TOKENS];
-    // let mut start_liabs_u64 = [0u128; NUM_TOKENS];
-    // let mut end_assets_u64 = [0u128; NUM_TOKENS];
-    // let mut end_liabs_u64 = [0u128; NUM_TOKENS];
-    // let mut total_deposits_u64 = [0u128; NUM_TOKENS];
-    // for i in 0..NUM_TOKENS {
-    //     prices_f64[i] = prices[i].to_bits();
-    //     start_assets_u64[i] = start_assets[i].to_bits();
-    //     start_liabs_u64[i] = start_liabs[i].to_bits();
-    //     end_assets_u64[i] = end_assets[i].to_bits();
-    //     end_liabs_u64[i] = end_liabs[i].to_bits();
-    //     total_deposits_u64[i] = total_deposits[i].to_bits();
-    // }
-    // Note total_deposits is only logged with reasonable values if assets_val < DUST_THRESHOLD
+
     msg!("liquidation details: {{ \
                 \"start\": {{ \"assets\": {:?}, \"liabs\": {:?} }}, \
                 \"end\": {{ \"assets\": {:?}, \"liabs\": {:?} }}, \
