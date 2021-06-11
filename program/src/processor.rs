@@ -789,7 +789,7 @@ impl Processor {
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         if pre_base == 0 && pre_quote == 0 {
@@ -813,7 +813,7 @@ impl Processor {
 
         let (post_base, post_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         check_default!(post_base <= pre_base)?;
@@ -1164,7 +1164,7 @@ impl Processor {
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         if pre_base == 0 && pre_quote == 0 {
@@ -1177,7 +1177,7 @@ impl Processor {
 
         let (post_base, post_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         check_default!(post_base <= pre_base)?;
@@ -1217,7 +1217,7 @@ impl Processor {
             out_vault_acc,
             signer_acc,
             token_prog_acc,
-            _clock_acc,
+            clock_acc,
         ] = fixed_accs;
         check!(token_prog_acc.key == &spl_token::ID, MangoErrorCode::InvalidProgramId)?;
         check!(liqor_acc.is_signer, MangoErrorCode::SignerNecessary)?;
@@ -1250,15 +1250,15 @@ impl Processor {
         //      there is not enough compute to continue
         //      code is written below but needs to be tested on devnet first
 
-        // let clock = Clock::from_account_info(clock_acc)?;
-        // let now_ts = clock.unix_timestamp as u64;
-        // for i in 0..NUM_TOKENS {
-        //     if now_ts > mango_group.indexes[i].last_update + 3600 {
-        //         msg!("Invalid indexes");
-        //         mango_group.update_indexes(&clock)?;
-        //         return Ok(());
-        //     }
-        // }
+        let clock = Clock::from_account_info(clock_acc)?;
+        let now_ts = clock.unix_timestamp as u64;
+        for i in 0..NUM_TOKENS {
+            if now_ts > mango_group.indexes[i].last_update + 3600 {
+                msg!("Invalid indexes");
+                mango_group.update_indexes(&clock)?;
+                return Ok(());
+            }
+        }
 
         let prices = get_prices(&mango_group, oracle_accs)?;
         let start_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
@@ -1715,6 +1715,7 @@ fn invoke_settle_funds<'a>(
             AccountMeta::new(*quote_vault_acc.key, false),
             AccountMeta::new_readonly(*dex_signer_acc.key, false),
             AccountMeta::new_readonly(*token_prog_acc.key, false),
+            AccountMeta::new(*quote_vault_acc.key, false),
         ],
     };
 
