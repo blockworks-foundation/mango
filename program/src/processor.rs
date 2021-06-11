@@ -1729,7 +1729,8 @@ fn invoke_settle_funds<'a>(
         base_vault_acc.clone(),
         quote_vault_acc.clone(),
         dex_signer_acc.clone(),
-        token_prog_acc.clone()
+        token_prog_acc.clone(),
+        quote_vault_acc.clone(),
     ];
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
