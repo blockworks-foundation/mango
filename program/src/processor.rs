@@ -789,7 +789,7 @@ impl Processor {
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         if pre_base == 0 && pre_quote == 0 {
@@ -813,7 +813,7 @@ impl Processor {
 
         let (post_base, post_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         check_default!(post_base <= pre_base)?;
@@ -1164,7 +1164,7 @@ impl Processor {
 
         let (pre_base, pre_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         if pre_base == 0 && pre_quote == 0 {
@@ -1177,7 +1177,7 @@ impl Processor {
 
         let (post_base, post_quote) = {
             let open_orders = load_open_orders(open_orders_acc)?;
-            (open_orders.native_coin_free, open_orders.native_pc_free)
+            (open_orders.native_coin_free, open_orders.native_pc_free + open_orders.referrer_rebates_accrued)
         };
 
         check_default!(post_base <= pre_base)?;
@@ -1715,6 +1715,7 @@ fn invoke_settle_funds<'a>(
             AccountMeta::new(*quote_vault_acc.key, false),
             AccountMeta::new_readonly(*dex_signer_acc.key, false),
             AccountMeta::new_readonly(*token_prog_acc.key, false),
+            AccountMeta::new(*quote_vault_acc.key, false),
         ],
     };
 
@@ -1728,7 +1729,8 @@ fn invoke_settle_funds<'a>(
         base_vault_acc.clone(),
         quote_vault_acc.clone(),
         dex_signer_acc.clone(),
-        token_prog_acc.clone()
+        token_prog_acc.clone(),
+        quote_vault_acc.clone(),
     ];
     solana_program::program::invoke_signed(&instruction, &account_infos, signers_seeds)
 }
