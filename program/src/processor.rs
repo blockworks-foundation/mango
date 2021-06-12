@@ -1217,7 +1217,7 @@ impl Processor {
             out_vault_acc,
             signer_acc,
             token_prog_acc,
-            clock_acc,
+            _clock_acc,
         ] = fixed_accs;
         check!(token_prog_acc.key == &spl_token::ID, MangoErrorCode::InvalidProgramId)?;
         check!(liqor_acc.is_signer, MangoErrorCode::SignerNecessary)?;
@@ -1250,15 +1250,15 @@ impl Processor {
         //      there is not enough compute to continue
         //      code is written below but needs to be tested on devnet first
 
-        let clock = Clock::from_account_info(clock_acc)?;
-        let now_ts = clock.unix_timestamp as u64;
-        for i in 0..NUM_TOKENS {
-            if now_ts > mango_group.indexes[i].last_update + 3600 {
-                msg!("Invalid indexes");
-                mango_group.update_indexes(&clock)?;
-                return Ok(());
-            }
-        }
+        // let clock = Clock::from_account_info(clock_acc)?;
+        // let now_ts = clock.unix_timestamp as u64;
+        // for i in 0..NUM_TOKENS {
+        //     if now_ts > mango_group.indexes[i].last_update + 3600 {
+        //         msg!("Invalid indexes");
+        //         mango_group.update_indexes(&clock)?;
+        //         return Ok(());
+        //     }
+        // }
 
         let prices = get_prices(&mango_group, oracle_accs)?;
         let start_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
