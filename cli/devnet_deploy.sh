@@ -8,7 +8,7 @@ fi
 
 # deploy mango program and new mango group
 source ~/mango/cli/devnet.env $KEYPAIR
-solana config set --url $DEVNET_URL
+solana config set --url $CLUSTER_URL
 
 cd ~/mango
 pushd program

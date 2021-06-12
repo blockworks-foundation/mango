@@ -393,7 +393,7 @@ impl MarginAccount {
             let open_orders = load_open_orders(&open_orders_accs[i])?;
 
             assets[i] = U64F64::from_num(open_orders.native_coin_total).checked_add(assets[i]).unwrap();
-            assets[NUM_TOKENS-1] = U64F64::from_num(open_orders.native_pc_total).checked_add(assets[NUM_TOKENS-1]).unwrap();
+            assets[NUM_TOKENS-1] = U64F64::from_num(open_orders.native_pc_total + open_orders.referrer_rebates_accrued).checked_add(assets[NUM_TOKENS-1]).unwrap();
         }
         Ok(assets)
     }
@@ -432,7 +432,7 @@ impl MarginAccount {
             let open_orders = load_open_orders(&open_orders_accs[i])?;
             assets = U64F64::from_num(open_orders.native_coin_total)
                 .checked_mul(prices[i]).unwrap()
-                .checked_add(U64F64::from_num(open_orders.native_pc_total)).unwrap()
+                .checked_add(U64F64::from_num(open_orders.native_pc_total + open_orders.referrer_rebates_accrued)).unwrap()
                 .checked_add(assets).unwrap();
         }
         for i in 0..NUM_TOKENS {  // add up the value in margin account deposits and positions
