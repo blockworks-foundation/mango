@@ -63,6 +63,10 @@ pub enum MangoErrorCode {
     InvalidMangoVault,
     #[error("MangoErrorCode::BeingLiquidated The margin account has restricted functionality while being liquidated")]
     BeingLiquidated,
+    #[error("MangoErrorCode::FeeDiscountFunctionality SRM is already part of MangoGroup. Deposit and withdraw SRM functionality disabled.")]
+    FeeDiscountFunctionality,
+    #[error("MangoErrorCode::Deprecated")]
+    Deprecated,
 
     #[error("MangoErrorCode::Default Check the source code for more info")]
     Default = u32::MAX_VALUE,

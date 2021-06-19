@@ -16,7 +16,7 @@ use fixed_macro::types::U64F64;
 use crate::error::{check_assert, MangoResult, SourceFileId, MangoErrorCode, MangoError};
 
 /// Initially launching with BTC/USDT, ETH/USDT
-pub const NUM_TOKENS: usize = 3;
+pub const NUM_TOKENS: usize = 5;
 pub const NUM_MARKETS: usize = NUM_TOKENS - 1;
 pub const MANGO_GROUP_PADDING: usize = 8 - (NUM_TOKENS + NUM_MARKETS) % 8;
 pub const MINUTE: u64 = 60;
@@ -30,8 +30,10 @@ const MAX_R: U64F64 = U64F64!(9.5129375951293759512937e-08); // max 300% APY -> 
 pub const ONE_U64F64: U64F64 = U64F64!(1);
 pub const ZERO_U64F64: U64F64 = U64F64!(0);
 pub const PARTIAL_LIQ_INCENTIVE: U64F64 = U64F64!(1.05);
-pub const DUST_THRESHOLD: U64F64 = U64F64!(0.01);  // TODO make this part of MangoGroup state
+pub const DUST_THRESHOLD: U64F64 = U64F64!(1);  // TODO make this part of MangoGroup state
 pub const EPSILON: U64F64 = U64F64!(1.0e-17);
+pub const INFO_LEN: usize = 32;
+
 
 macro_rules! check_default {
     ($cond:expr) => {
@@ -190,6 +192,8 @@ impl MangoGroup {
             slope * utilization
         }
     }
+
+
     pub fn update_indexes(&mut self, clock: &Clock) -> MangoResult<()> {
         // TODO verify what happens if total_deposits < total_borrows
         // TODO verify what happens if total_deposits == 0 && total_borrows > 0
@@ -231,26 +235,33 @@ impl MangoGroup {
     pub fn has_valid_deposits_borrows(&self, token_i: usize) -> bool {
         self.get_total_native_deposit(token_i) >= self.get_total_native_borrow(token_i)
     }
+
     pub fn get_total_native_borrow(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_borrows[token_i] * self.indexes[token_i].borrow;
         native.checked_ceil().unwrap().to_num()  // rounds toward +inf
     }
+
     pub fn get_total_native_deposit(&self, token_i: usize) -> u64 {
         let native: U64F64 = self.total_deposits[token_i] * self.indexes[token_i].deposit;
         native.checked_floor().unwrap().to_num()  // rounds toward -inf
     }
+
     pub fn get_market_index(&self, spot_market_pk: &Pubkey) -> Option<usize> {
         self.spot_markets.iter().position(|market| market == spot_market_pk)
     }
+
     pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_add(v).ok_or(throw!())?)
     }
+
     pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_borrows[token_i] = self.total_borrows[token_i].checked_sub(v).ok_or(throw!())?)
     }
+
     pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_add(v).ok_or(throw!())?)
     }
+
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.total_deposits[token_i] = self.total_deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
@@ -272,10 +283,10 @@ pub struct MarginAccount {
     pub borrows: [U64F64; NUM_TOKENS],  // multiply by current index to get actual value
 
     pub open_orders: [Pubkey; NUM_MARKETS],  // owned by Mango
-
     pub being_liquidated: bool,
-    pub padding: [u8; 7] // padding to make compatible with previous MarginAccount size
-    // TODO add has_borrows field for easy memcmp fetching
+    pub has_borrows: bool, // does the account have any open borrows? set by checked_add_borrow and checked_sub_borrow
+    pub info: [u8; INFO_LEN],
+    pub padding: [u8; 38] // padding for future expansion
 }
 impl_loadable!(MarginAccount);
 
@@ -342,39 +353,66 @@ impl MarginAccount {
             Ok(assets.checked_div( liabs).unwrap())
         }
     }
-    pub fn get_total_assets(
+
+    pub fn coll_ratio_from_assets_liabs(
+        &self,
+        prices: &[U64F64; NUM_TOKENS],
+        assets: &[U64F64; NUM_TOKENS],
+        liabs: &[U64F64; NUM_TOKENS]
+    ) -> MangoResult<U64F64> {
+        let mut assets_val: U64F64 = ZERO_U64F64;
+        let mut liabs_val: U64F64 = ZERO_U64F64;
+        for i in 0..NUM_TOKENS {
+            liabs_val = liabs[i].checked_mul(prices[i]).unwrap().checked_add(liabs_val).unwrap();
+            assets_val = assets[i].checked_mul(prices[i]).unwrap().checked_add(assets_val).unwrap();
+        }
+
+        if liabs_val == ZERO_U64F64 {
+            Ok(U64F64::MAX)
+        } else {
+            Ok(assets_val.checked_div(liabs_val).unwrap())
+        }
+    }
+
+    pub fn get_assets(
         &self,
         mango_group: &MangoGroup,
         open_orders_accs: &[AccountInfo; NUM_MARKETS]
-    ) -> MangoResult<[u64; NUM_TOKENS]> {
-        let mut assets = [0u64; NUM_TOKENS];
+    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
+        let mut assets = [ZERO_U64F64; NUM_TOKENS];
 
         for i in 0..NUM_TOKENS {
-            assets[i] = self.get_native_deposit(&mango_group.indexes[i], i)
+            assets[i] = mango_group.indexes[i].deposit.checked_mul(self.deposits[i]).unwrap()
                 .checked_add(assets[i]).unwrap();
         }
+
         for i in 0..NUM_MARKETS {
             if *open_orders_accs[i].key == Pubkey::default() {
                 continue;
             }
             let open_orders = load_open_orders(&open_orders_accs[i])?;
 
-            assets[i] = open_orders.native_coin_total.checked_add(assets[i]).unwrap();
-            assets[NUM_TOKENS-1] = open_orders.native_pc_total.checked_add(assets[NUM_TOKENS-1]).unwrap();
+            assets[i] = U64F64::from_num(open_orders.native_coin_total).checked_add(assets[i]).unwrap();
+            assets[NUM_TOKENS-1] = U64F64::from_num(open_orders.native_pc_total + open_orders.referrer_rebates_accrued).checked_add(assets[NUM_TOKENS-1]).unwrap();
         }
         Ok(assets)
     }
 
-    pub fn get_total_liabs(
+
+    pub fn get_liabs(
         &self,
-        mango_group: &MangoGroup
-    ) -> MangoResult<[u64; NUM_TOKENS]> {
-        let mut liabs = [0u64; NUM_TOKENS];
-        for i in 0.. NUM_TOKENS {
-            liabs[i] = self.get_native_borrow(&mango_group.indexes[i], i);
+        mango_group: &MangoGroup,
+    ) -> MangoResult<[U64F64; NUM_TOKENS]> {
+        let mut liabs = [ZERO_U64F64; NUM_TOKENS];
+
+        for i in 0..NUM_TOKENS {
+            liabs[i] = mango_group.indexes[i].borrow.checked_mul(self.borrows[i]).unwrap()
+                .checked_add(liabs[i]).unwrap();
         }
+
         Ok(liabs)
     }
+
 
     pub fn get_assets_val(
         &self,
@@ -394,9 +432,8 @@ impl MarginAccount {
             let open_orders = load_open_orders(&open_orders_accs[i])?;
             assets = U64F64::from_num(open_orders.native_coin_total)
                 .checked_mul(prices[i]).unwrap()
-                .checked_add(U64F64::from_num(open_orders.native_pc_total)).unwrap()
+                .checked_add(U64F64::from_num(open_orders.native_pc_total + open_orders.referrer_rebates_accrued)).unwrap()
                 .checked_add(assets).unwrap();
-
         }
         for i in 0..NUM_TOKENS {  // add up the value in margin account deposits and positions
             let index: &MangoIndex = &mango_group.indexes[i];
@@ -408,6 +445,8 @@ impl MarginAccount {
         Ok(assets)
 
     }
+
+
     pub fn get_liabs_val(
         &self,
         mango_group: &MangoGroup,
@@ -422,6 +461,7 @@ impl MarginAccount {
         Ok(liabs)
     }
     /// Return amount of quote currency to deposit to get account above init_coll_ratio
+
     pub fn get_collateral_deficit(
         &self,
         mango_group: &MangoGroup,
@@ -438,6 +478,7 @@ impl MarginAccount {
         }
     }
 
+
     pub fn get_partial_liq_deficit(
         &self,
         mango_group: &MangoGroup,
@@ -453,23 +494,28 @@ impl MarginAccount {
             // TODO make this checked
             Ok((liabs * mango_group.init_coll_ratio - assets) / (mango_group.init_coll_ratio - PARTIAL_LIQ_INCENTIVE))
         }
-
     }
+
     pub fn get_native_borrow(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.borrows[token_i] * index.borrow).to_num()
     }
+
     pub fn get_native_deposit(&self, index: &MangoIndex, token_i: usize) -> u64 {
         (self.deposits[token_i] * index.deposit).to_num()
     }
+
     pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.borrows[token_i] = self.borrows[token_i].checked_add(v).ok_or(throw!())?)
     }
+
     pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.borrows[token_i] = self.borrows[token_i].checked_sub(v).ok_or(throw!())?)
     }
+
     pub fn checked_add_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_add(v).ok_or(throw!())?)
     }
+
     pub fn checked_sub_deposit(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
         Ok(self.deposits[token_i] = self.deposits[token_i].checked_sub(v).ok_or(throw!())?)
     }
@@ -664,6 +710,7 @@ pub fn load_open_orders<'a>(
 ) -> Result<Ref<'a, serum_dex::state::OpenOrders>, ProgramError> {
     Ok(Ref::map(strip_dex_padding(acc)?, from_bytes))
 }
+
 
 pub fn check_open_orders(
     acc: &AccountInfo,

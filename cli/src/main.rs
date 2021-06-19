@@ -270,21 +270,32 @@ pub fn start(opts: Opts) -> Result<()> {
                 |token| (token.clone(), get_symbol_pk(symbols, token.as_str()).to_string())
             ).collect();
 
-            // Create vaults owned by mango program id
+            // Create vaults owned by mango program id and check if SRM in mango group
+            let srm_mint_pk = get_symbol_pk(symbols, "SRM");
+            let mut srm_in_mango_group_index: Option<usize> = None;
             let mut vault_pks = vec![];
             for i in 0..mint_pks.len() {
                 println!("Creating vault for: {}", &tokens[i]);
                 let vault_pk = create_token_account(
                     &client, &mint_pks[i], &signer_key, &payer
                 )?.pubkey();
+                if &mint_pks[i] == &srm_mint_pk {
+                    srm_in_mango_group_index = Some(i);
+                }
                 vault_pks.push(vault_pk);
             }
 
-            let srm_mint_pk = get_symbol_pk(symbols, "SRM");
-            println!("Creating vault for: SRM");
-            let srm_vault_pk = create_token_account(
-                &client, &srm_mint_pk, &signer_key, &payer
-            )?.pubkey();
+            // If SRM is in mango group don't create a new vault for it, instead use existing
+            let srm_vault_pk: Pubkey;
+            if srm_in_mango_group_index.is_some() {
+                println!("Reusing existing vault for: SRM");
+                srm_vault_pk = vault_pks[srm_in_mango_group_index.unwrap()];
+            } else {
+                println!("Creating vault for: SRM");
+                srm_vault_pk = create_token_account(
+                    &client, &srm_mint_pk, &signer_key, &payer
+                )?.pubkey();
+            };
 
             println!("set up spot markets");
             // Find corresponding spot markets
@@ -297,9 +308,10 @@ pub fn start(opts: Opts) -> Result<()> {
             for i in 0..(tokens.len() - 1) {
                 let base_symbol = tokens[i].as_str();
                 let market_symbol = format!("{}/{}", base_symbol, quote_symbol);
+                println!("{}", market_symbol);
                 spot_market_pks.push(get_symbol_pk(spot_markets, market_symbol.as_str()));
                 oracle_pks.push(get_symbol_pk(oracles, market_symbol.as_str()));
-                spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().unwrap().to_string());
+                spot_market_symbols.insert(market_symbol.clone(), spot_markets[market_symbol.as_str()].as_str().expect("spot market not found").to_string());
             }
 
             println!("borrow limits");
@@ -678,7 +690,7 @@ fn get_pk(json: &Value, name: &str) -> Pubkey {
 }
 
 fn get_symbol_pk(symbols: &Value, symbol: &str) -> Pubkey {
-    Pubkey::from_str(symbols[symbol].as_str().unwrap()).unwrap()
+    Pubkey::from_str(symbols[symbol].as_str().expect("get_symbol_pk symbol not found")).unwrap()
 }
 
 fn get_vec_pks(value: &Value) -> Vec<Pubkey> {
