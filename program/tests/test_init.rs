@@ -45,14 +45,17 @@ async fn test_init_serum_dex() {
     let mut test = ProgramTest::new(
         "mango",
         program_id,
-        Option::None,  // These tests only run in bpf mode so adding the process_instruction here does nothing
+        processor!(process_instruction),
     );
 
     let srm_program_id = Pubkey::new_unique();
     test.add_program(
-        "serum_dex",
+        // This program name is actually important. It tells the loader what file to look for in tests/fixtures
+        "serum_dex",  
         srm_program_id,
-        Option::None,
+        // These tests only run in bpf mode so adding the process_instruction here does nothing
+        // But we leave it here in case we do want to switch to running the tests in native mode for some reason
+        processor!(srm_process_instruction),
     );
     test.set_bpf_compute_max_units(50_000);
 }
