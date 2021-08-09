@@ -1,0 +1,11 @@
+anchor_version = "0.13.2"
+
+[workspace]
+members = ["program", "common"]
+
+[provider]
+cluster = "mainnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.mainnet]
+mango = "5fNfvyp5czQVX77yoACa3JJVEhdRaWjPuazuWgjhTqEH"
