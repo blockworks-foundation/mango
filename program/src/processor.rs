@@ -229,7 +229,6 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
 
-        check_eq!(&margin_account.owner, owner_acc.key, MangoErrorCode::InvalidMarginAccountOwner)?;
 
         let token_index = mango_group.get_token_index_with_vault(vault_acc.key).unwrap();
         check_eq_default!(&mango_group.vaults[token_index], vault_acc.key)?;
@@ -252,6 +251,7 @@ impl Processor {
 
         let deposit: U64F64 = U64F64::from_num(quantity) / mango_group.indexes[token_index].deposit;
         checked_add_deposit(&mut mango_group, &mut margin_account, token_index, deposit)?;
+        settle_borrow_full_unchecked(&mut mango_group, &mut margin_account, token_index)?;
 
         Ok(())
     }

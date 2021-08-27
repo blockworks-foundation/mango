@@ -1,31 +1,30 @@
 #![cfg(feature="test-bpf")]
 
-use std::mem::size_of;
 use std::convert::TryInto;
-use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
+use std::mem::size_of;
 
+use bytemuck::{bytes_of, Contiguous};
 use fixed::types::U64F64;
-use common::create_signer_key_and_nonce;
-use flux_aggregator::borsh_utils;
 use flux_aggregator::borsh_state::BorshState;
+use flux_aggregator::borsh_utils;
 use flux_aggregator::state::{Aggregator, AggregatorConfig, Answer};
+use safe_transmute::{self, to_bytes::transmute_one_to_bytes};
+use serum_dex::state::{AccountFlag, MarketState, ToAlignedBytes};
 use solana_program::program_option::COption;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
-use solana_program_test::{ProgramTest, BanksClient};
-
+use solana_program::pubkey::PubkeyError;
+use solana_program_test::{BanksClient, ProgramTest};
 use solana_sdk::{
-    account_info::IntoAccountInfo,
     account::Account,
+    account_info::IntoAccountInfo,
     instruction::Instruction,
     signature::{Keypair, Signer}
 };
+use spl_token::state::{Account as Token, AccountState, Mint};
 
-use spl_token::state::{Mint, Account as Token, AccountState};
-use serum_dex::state::{MarketState, AccountFlag, ToAlignedBytes};
-
-use mango::processor::srm_token;
 use mango::instruction::init_mango_group;
+use mango::processor::srm_token;
 use mango::state::MangoGroup;
 
 pub const PRICE_BTC: u64 = 50000;
@@ -33,6 +32,30 @@ pub const PRICE_ETH: u64 = 2000;
 pub const PRICE_SOL: u64 = 30;
 pub const PRICE_SRM: u64 = 5;
 pub const PRICE_RAY: u64 = 5;
+
+pub fn gen_signer_seeds<'a>(nonce: &'a u64, acc_pk: &'a Pubkey) -> [&'a [u8]; 2] {
+    [acc_pk.as_ref(), bytes_of(nonce)]
+}
+
+fn gen_signer_key(
+    nonce: u64,
+    acc_pk: &Pubkey,
+    program_id: &Pubkey,
+) -> Result<Pubkey, PubkeyError> {
+    let seeds = gen_signer_seeds(&nonce, acc_pk);
+    Pubkey::create_program_address(&seeds, program_id)
+}
+
+fn create_signer_key_and_nonce(program_id: &Pubkey, acc_pk: &Pubkey) -> (Pubkey, u64) {
+
+    for i in 0..=u64::MAX_VALUE {
+        if let Ok(pk) = gen_signer_key(i, acc_pk, program_id) {
+            return (pk, i);
+        }
+    }
+    panic!("Could not generate signer key");
+
+}
 
 trait AddPacked {
     fn add_packable_account<T: Pack>(
