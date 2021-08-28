@@ -13,12 +13,53 @@ use solana_sdk::{
     account::Account,
 };
 use solana_program::account_info::AccountInfo;
+use solana_program::entrypoint::ProgramResult;
+
+use serum_dex::state;
 
 use mango::{
     entrypoint::process_instruction,
     instruction::init_margin_account,
     state::MarginAccount,
 };
+
+
+// This is private in the SRM code, so need to duplicate
+fn srm_process_instruction(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    instruction_data: &[u8],
+) -> ProgramResult {
+    Ok(state::State::process(
+        program_id,
+        accounts,
+        instruction_data,
+    )?)
+}
+
+
+#[tokio::test]
+async fn test_init_serum_dex() {
+    let program_id = Pubkey::new_unique();
+
+    let mut test = ProgramTest::new(
+        "mango",
+        program_id,
+        processor!(process_instruction),
+    );
+
+    let srm_program_id = Pubkey::new_unique();
+    test.add_program(
+        // This program name is actually important. It tells the loader what file to look for in tests/fixtures
+        "serum_dex",  
+        srm_program_id,
+        // These tests only run in bpf mode so adding the process_instruction here does nothing
+        // But we leave it here in case we do want to switch to running the tests in native mode for some reason
+        processor!(srm_process_instruction),
+    );
+    test.set_bpf_compute_max_units(50_000);
+}
+
 
 #[tokio::test]
 async fn test_init_mango_group() {
