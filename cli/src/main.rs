@@ -136,7 +136,19 @@ pub enum Command {
         token_symbol: String,
         #[clap(long)]
         borrow_limit: f64
-    }
+    },
+    SwitchOracle {
+        #[clap(long, short)]
+        payer: String, // assumes for now payer is same as admin
+        #[clap(long, short)]
+        ids_path: String,
+        #[clap(long)]
+        mango_group_name: String,
+        #[clap(long)]
+        token_symbol: String,
+        #[clap(long)]
+        oracle: String,
+    },
 }
 
 impl Opts {
@@ -680,6 +692,48 @@ pub fn start(opts: Opts) -> Result<()> {
             let instructions = vec![instruction];
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
+        }
+        Command::SwitchOracle {
+            payer,
+            ids_path,
+            mango_group_name,
+            token_symbol,
+            oracle,
+        } => {
+            println!("SwitchOracle");
+            let payer = read_keypair_file(payer.as_str())?;
+            let ids: Value = serde_json::from_reader(File::open(&ids_path)?)?;
+            let cluster_name = opts.cluster.name();
+            let cluster_ids = &ids[cluster_name];
+            let cids = ClusterIds::load(cluster_ids);
+            let mgids = cids.mango_groups[&mango_group_name].clone();
+            // replace old oracle with new one when assembling instruction
+            let old_oracle_pk = &cids.oracles[&token_symbol];
+            let new_oracle_pks = mgids
+                .oracles
+                .iter()
+                .map(|o| {
+                    if o == old_oracle_pk {
+                        Pubkey::from_str(oracle.as_str())?
+                    } else {
+                        o
+                    }
+                })
+                .collect();
+            let instruction = switch_oracles(
+                &cids.mango_program_id,
+                &mgids.mango_group_pk,
+                &payer.pubkey(),
+                new_oracle_pks,
+            );
+            let instructions = vec![instruction];
+            let signers = vec![&payer];
+            send_instructions(&client, instructions, signers, &payer.pubkey())?;
+            // update ids
+            let oracle_pks = ids[cluster_name][mango_group_name].get_mut("oracle_pks")?;
+            oracle_pks = new_oracle_pks.iter().map(|pk| pk.to_string);
+            let f = File::create(ids_path.as_str()).unwrap();
+            serde_json::to_writer_pretty(&f, &ids).unwrap();
         }
     }
     Ok(())
