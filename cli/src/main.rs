@@ -17,7 +17,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Signer};
-use mango::instruction::{init_mango_group, init_margin_account, withdraw, borrow, deposit, settle_borrow, change_borrow_limit};
+use mango::instruction::{init_mango_group, init_margin_account, withdraw, borrow, deposit, settle_borrow, change_borrow_limit, switch_oracles};
 
 #[derive(Clap, Debug)]
 pub struct Opts {
@@ -709,14 +709,14 @@ pub fn start(opts: Opts) -> Result<()> {
             let mgids = cids.mango_groups[&mango_group_name].clone();
             // replace old oracle with new one when assembling instruction
             let old_oracle_pk = &cids.oracles[&token_symbol];
-            let new_oracle_pks = mgids
-                .oracles
+            let new_oracle_pks: Vec<Pubkey> = mgids
+                .oracle_pks
                 .iter()
                 .map(|o| {
                     if o == old_oracle_pk {
-                        Pubkey::from_str(oracle.as_str())?
+                        Pubkey::from_str(oracle.as_str()).unwrap()
                     } else {
-                        o
+                        *o
                     }
                 })
                 .collect();
@@ -724,16 +724,16 @@ pub fn start(opts: Opts) -> Result<()> {
                 &cids.mango_program_id,
                 &mgids.mango_group_pk,
                 &payer.pubkey(),
-                new_oracle_pks,
-            );
+                &new_oracle_pks.as_slice(),
+            )?;
             let instructions = vec![instruction];
             let signers = vec![&payer];
             send_instructions(&client, instructions, signers, &payer.pubkey())?;
             // update ids
-            let oracle_pks = ids[cluster_name][mango_group_name].get_mut("oracle_pks")?;
-            oracle_pks = new_oracle_pks.iter().map(|pk| pk.to_string);
-            let f = File::create(ids_path.as_str()).unwrap();
-            serde_json::to_writer_pretty(&f, &ids).unwrap();
+            // let oracle_pks = ids[cluster_name][mango_group_name].get_mut("oracle_pks").unwrap();
+            // oracle_pks = new_oracle_pks.iter().map(|pk| pk.to_string()).collect() as Vec<String>;
+            // let f = File::create(ids_path.as_str()).unwrap();
+            // serde_json::to_writer_pretty(&f, &ids).unwrap();
         }
     }
     Ok(())
