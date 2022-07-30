@@ -145,7 +145,7 @@ pub enum Command {
         #[clap(long)]
         mango_group_name: String,
         #[clap(long)]
-        token_symbol: String,
+        pair_name: String,
         #[clap(long)]
         oracle: String,
     },
@@ -697,7 +697,7 @@ pub fn start(opts: Opts) -> Result<()> {
             payer,
             ids_path,
             mango_group_name,
-            token_symbol,
+            pair_name,
             oracle,
         } => {
             println!("SwitchOracle");
@@ -708,7 +708,7 @@ pub fn start(opts: Opts) -> Result<()> {
             let cids = ClusterIds::load(cluster_ids);
             let mgids = cids.mango_groups[&mango_group_name].clone();
             // replace old oracle with new one when assembling instruction
-            let old_oracle_pk = &cids.oracles[&token_symbol];
+            let old_oracle_pk = &cids.oracles[&pair_name];
             let new_oracle_pks: Vec<Pubkey> = mgids
                 .oracle_pks
                 .iter()
