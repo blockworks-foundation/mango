@@ -63,6 +63,8 @@ pub enum MangoErrorCode {
     InvalidMangoVault,
     #[error("MangoErrorCode::BeingLiquidated The margin account has restricted functionality while being liquidated")]
     BeingLiquidated,
+    #[error("MangoErrorCode::OracleOffline")]
+    OracleOffline,
 
     #[error("MangoErrorCode::Default Check the source code for more info")]
     Default = u32::MAX_VALUE,
@@ -85,6 +87,14 @@ impl From<serum_dex::error::DexError> for MangoError {
     fn from(de: serum_dex::error::DexError) -> Self {
         let pe: ProgramError = de.into();
         pe.into()
+    }
+}
+
+
+impl From<pyth_client::PythError> for MangoError {
+    fn from(pyth_e: pyth_client::PythError) -> Self {
+        let prog_e: ProgramError = pyth_e.into();
+        prog_e.into()
     }
 }
 
