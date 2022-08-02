@@ -36,7 +36,7 @@ pub enum MangoInstruction {
     /// 7+2*NUM_TOKENS..7+2*NUM_TOKENS+NUM_MARKETS `[]`
     ///     spot_market_accs - MarketState account from serum dex for each of the spot markets
     /// 7+2*NUM_TOKENS+NUM_MARKETS..7+2*NUM_TOKENS+2*NUM_MARKETS `[]`
-    ///     oracle_accs - Solana Flux Aggregator accounts corresponding to each trading pair
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     InitMangoGroup {
         signer_nonce: u64,
         maint_coll_ratio: U64F64,
@@ -83,7 +83,7 @@ pub enum MangoInstruction {
     /// 7. `[]` clock_acc - Clock sysvar account
     /// 8..8+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 8+NUM_MARKETS..8+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     Withdraw {
         quantity: u64
     },
@@ -98,7 +98,7 @@ pub enum MangoInstruction {
     /// 3. `[]` clock_acc - Clock sysvar account
     /// 4..4+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 4+NUM_MARKETS..4+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     Borrow {
         token_index: usize,
         quantity: u64
@@ -128,7 +128,7 @@ pub enum MangoInstruction {
     /// 4. `[]` clock_acc - Clock sysvar account
     /// 5..5+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 5+NUM_MARKETS..5+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     /// 5+2*NUM_MARKETS..5+2*NUM_MARKETS+NUM_TOKENS `[writable]`
     ///     vault_accs - MangoGroup vaults
     /// 5+2*NUM_MARKETS+NUM_TOKENS..5+2*NUM_MARKETS+2*NUM_TOKENS `[writable]`
@@ -197,7 +197,7 @@ pub enum MangoInstruction {
     /// 16. `[writable]` srm_vault_acc - MangoGroup's srm_vault used for fee reduction
     /// 17..17+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
     /// 17+NUM_MARKETS..17+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     PlaceOrder {
         order: serum_dex::instruction::NewOrderInstructionV3
     },
@@ -297,7 +297,7 @@ pub enum MangoInstruction {
     /// 18. `[]` dex_signer_acc - signer for serum dex MarketState
     /// 19..19+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
     /// 19+NUM_MARKETS..19+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     PlaceAndSettle {
         order: serum_dex::instruction::NewOrderInstructionV3
     },
@@ -324,7 +324,7 @@ pub enum MangoInstruction {
     /// 15. `[]` clock_acc - Clock sysvar account
     /// 16..16+NUM_MARKETS `[writable]` open_orders_accs - open orders for each of the spot market
     /// 16+NUM_MARKETS..16+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     ForceCancelOrders {
         /// Max orders to cancel -- could be useful to lower this if running into compute limits
         /// Recommended: 5
@@ -347,7 +347,7 @@ pub enum MangoInstruction {
     /// 9. `[]` clock_acc - Clock sysvar account
     /// 10..10+NUM_MARKETS `[]` open_orders_accs - open orders for each of the spot market
     /// 10+NUM_MARKETS..10+2*NUM_MARKETS `[]`
-    ///     oracle_accs - flux aggregator feed accounts
+    ///     oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
     PartialLiquidate {
         /// Quantity of the token being deposited to repay borrows
         max_deposit: u64
@@ -356,7 +356,13 @@ pub enum MangoInstruction {
 
     AddMarginAccountInfo {
         info: [u8; INFO_LEN]
-    }
+    },
+
+    /// Allows to switch the oracles to a new set
+    /// 0. `[writable]` mango_group_acc - the data account to store mango group state vars
+    /// 1. `[signer]` admin_acc - admin key that created the group
+    /// 2..2+NUM_MARKETS `[]` oracle_accs - Pyth Price / Solana Flux Aggregator accounts corresponding to each trading pair
+    SwitchOracles
 }
 
 
@@ -507,6 +513,9 @@ impl MangoInstruction {
                 MangoInstruction::AddMarginAccountInfo {
                     info: *info
                 }
+            }
+            18 => {
+                MangoInstruction::SwitchOracles
             }
             _ => { return None; }
         })
@@ -1227,6 +1236,28 @@ pub fn add_margin_account_info(
     ];
 
     let instr = MangoInstruction::AddMarginAccountInfo { info };
+    let data = instr.pack();
+    Ok(Instruction {
+        program_id: *program_id,
+        accounts,
+        data
+    })
+}
+
+pub fn switch_oracles(
+    program_id: &Pubkey,
+    mango_group_pk: &Pubkey,
+    admin_pk: &Pubkey,
+    oracle_pks: &[Pubkey],
+) -> Result<Instruction, ProgramError> {
+    let mut accounts = vec![
+        AccountMeta::new(*mango_group_pk, false),
+        AccountMeta::new_readonly(*admin_pk, true),
+    ];
+    accounts.extend(oracle_pks.iter().map(
+        |pk| AccountMeta::new_readonly(*pk, false))
+    );
+    let instr = MangoInstruction::SwitchOracles {};
     let data = instr.pack();
     Ok(Instruction {
         program_id: *program_id,

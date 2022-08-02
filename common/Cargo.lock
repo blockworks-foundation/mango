@@ -414,7 +414,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytemuck",
  "ed25519-dalek",
- "rand 0.8.4",
+ "rand 0.7.3",
  "serde_json",
  "solana-client",
  "solana-sdk",

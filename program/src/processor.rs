@@ -1,11 +1,13 @@
 use std::cmp;
 use std::cmp::min;
 use std::mem::size_of;
+use std::ops::Neg;
 
 use arrayref::{array_ref, array_refs};
 use fixed::types::U64F64;
 use fixed_macro::types::U64F64;
 use flux_aggregator::borsh_state::InitBorshState;
+use pyth_client::PriceStatus;
 use serum_dex::matching::Side;
 use serum_dex::state::ToAlignedBytes;
 use solana_program::account_info::AccountInfo;
@@ -1375,6 +1377,52 @@ impl Processor {
         margin_account.info = info;
         Ok(())
     }
+
+    #[inline(never)]
+    fn switch_oracles(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+    ) -> MangoResult<()> {
+        const NUM_FIXED: usize = 2;
+        let accounts = array_ref![accounts, 0, NUM_FIXED + NUM_MARKETS];
+        let (fixed_accs, oracle_accs) = array_refs![accounts, NUM_FIXED, NUM_MARKETS];
+        let [
+            mango_group_acc,
+            admin_acc,
+        ] = fixed_accs;
+
+        let mut mango_group = MangoGroup::load_mut_checked(
+            mango_group_acc, program_id)?;
+        check_eq!(admin_acc.key, &mango_group.admin, MangoErrorCode::InvalidGroupOwner)?;
+        check!(admin_acc.is_signer, MangoErrorCode::SignerNecessary)?;
+
+        for i in 0..NUM_MARKETS {
+            mango_group.oracles[i] = *oracle_accs[i].key;
+
+            // determine oracle type
+            let borrowed = oracle_accs[i].data.borrow();
+            let magic = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
+
+            // read oracle decimals
+            let decimals = if magic == pyth_client::MAGIC {
+                // detected pyth oracle
+                let price_account = pyth_client::load_price(&borrowed)?;
+                // usually expo is -8, verify anyways that it's within bounds
+                check!(price_account.expo <= 0, MangoErrorCode::Default);
+                check!(price_account.expo >= -255, MangoErrorCode::Default);
+                price_account.expo.neg() as u8
+            } else {
+                // fall back to legacy flux aggregator
+                let oracle = flux_aggregator::state::Aggregator::load_initialized(&oracle_accs[i])?;
+                oracle.config.decimals
+            };
+            
+            mango_group.oracle_decimals[i] = decimals;
+        }
+        
+        Ok(())
+    }
+
     pub fn process(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
@@ -1491,6 +1539,10 @@ impl Processor {
             } => {
                 msg!("Mango: AddMarginAccountInfo");
                 Self::add_margin_account_info(program_id, accounts, info)?;
+            }
+            MangoInstruction::SwitchOracles => {
+                msg!("Mango: SwitchOracles");
+                Self::switch_oracles(program_id, accounts)?;
             }
         }
         Ok(())
@@ -1671,16 +1723,27 @@ pub fn get_prices(
     for i in 0..NUM_MARKETS {
         check_eq_default!(&mango_group.oracles[i], oracle_accs[i].key)?;
 
-        // TODO store this info in MangoGroup, first make sure it cannot be changed by solink
+        let base_adj = U64F64::from_num(10u64.pow(mango_group.mint_decimals[i] as u32));
         let quote_adj = U64F64::from_num(
             10u64.pow(quote_decimals.checked_sub(mango_group.oracle_decimals[i]).unwrap() as u32)
         );
 
-        let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
+        // determine oracle type
+        let borrowed = oracle_accs[i].data.borrow();
+        let magic = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
 
-        let value = U64F64::from_num(answer.median);
+        // read oracle value
+        let value = if magic == pyth_client::MAGIC {
+            // detected pyth oracle
+            let price_account = pyth_client::load_price(&borrowed)?; 
+            check_eq!(price_account.get_current_price_status(), PriceStatus::Trading, MangoErrorCode::OracleOffline);
+            U64F64::from_num(price_account.agg.price)
+        } else {
+            // fall back to legacy flux aggregator
+            let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
+            U64F64::from_num(answer.median)
+        };
 
-        let base_adj = U64F64::from_num(10u64.pow(mango_group.mint_decimals[i] as u32));
         prices[i] = quote_adj
             .checked_div(base_adj).unwrap()
             .checked_mul(value).unwrap();
