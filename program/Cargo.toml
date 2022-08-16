@@ -1,6 +1,6 @@
 [package]
 name = "mango"
-version = "0.2.6"
+version = "0.3.0"
 authors = ["blockworks"]
 edition = "2018"
 
