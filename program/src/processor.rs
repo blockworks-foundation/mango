@@ -1721,15 +1721,18 @@ pub fn get_prices(
 ) -> MangoResult<[U64F64; NUM_TOKENS]> {
     let mut prices = [ZERO_U64F64; NUM_TOKENS];
     prices[NUM_MARKETS] = ONE_U64F64;  // quote currency is 1
-    let quote_decimals: u8 = mango_group.mint_decimals[NUM_MARKETS];
+    let quote_decimals: i16 = mango_group.mint_decimals[NUM_MARKETS].into();
 
     for i in 0..NUM_MARKETS {
         check_eq_default!(&mango_group.oracles[i], oracle_accs[i].key)?;
 
-        let base_adj = U64F64::from_num(10u64.pow(mango_group.mint_decimals[i] as u32));
-        let quote_adj = U64F64::from_num(
-            10u64.pow(quote_decimals.checked_sub(mango_group.oracle_decimals[i]).unwrap() as u32)
-        );
+        let base_adj = U64F64::from_num(10u64.checked_pow(mango_group.mint_decimals[i] as u32).unwrap());
+        let quote_dec_adj = quote_decimals.checked_sub(mango_group.oracle_decimals[i].into()).unwrap();
+        let quote_adj = if quote_dec_adj >= 0 {
+            U64F64::from_num(10u64.checked_pow(quote_dec_adj as u32).unwrap())
+        } else {
+            U64F64::ONE.checked_div(U64F64::from_num(10u64.checked_pow(-quote_dec_adj as u32).unwrap())).unwrap()
+        };
 
         // determine oracle type
         let borrowed = oracle_accs[i].data.borrow();
