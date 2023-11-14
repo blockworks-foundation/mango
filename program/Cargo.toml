@@ -10,7 +10,7 @@ devnet = []
 test-bpf = []
 
 [dependencies]
-solana-program = "^1.6.4"
+solana-program = "=1.9.12"
 byteorder = "^1.3.4"
 arrayref = "^0.3.6"
 num_enum = "^0.5.1"
@@ -30,9 +30,15 @@ serum_dex = { version = "0.4.0", rev="3104f424ee38a415418a1cdef67970771f832857",
 flux-aggregator = { version = "^0.1", rev="ca6706d05218acc84d164ed5149fac7612d3aa2b", git = "https://github.com/blockworks-foundation/solana-flux-aggregator.git", features=["program", "no-entrypoint"] }
 pyth-client = {version = ">=0.5.0", features = ["no-entrypoint"]}
 
+switchboard-utils = "=0.2.1"
+
+
 [dev-dependencies]
-solana-sdk = "^1.6.4"
-solana-program-test = "^1.6.4"
+solana-sdk = "=1.9.12"
+solana-program-test = "=1.9.12"
+blake3 = "=1.2.0"
+h2="=0.3.18"
+thread_local="=1.0.1"
 
 [profile.release]
 lto = true

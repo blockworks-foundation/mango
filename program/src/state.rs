@@ -505,7 +505,8 @@ impl MarginAccount {
     }
 
     pub fn checked_add_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {
-        Ok(self.borrows[token_i] = self.borrows[token_i].checked_add(v).ok_or(throw!())?)
+        Err(throw!())
+        // Ok(self.borrows[token_i] = self.borrows[token_i].checked_add(v).ok_or(throw!())?)
     }
 
     pub fn checked_sub_borrow(&mut self, token_i: usize, v: U64F64) -> MangoResult<()> {

@@ -21,6 +21,7 @@ use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
+use switchboard_utils::FastRoundResultAccountData;
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
@@ -1411,6 +1412,9 @@ impl Processor {
                 check!(price_account.expo <= 0, MangoErrorCode::Default);
                 check!(price_account.expo >= -255, MangoErrorCode::Default);
                 price_account.expo.neg() as u8
+            } else if borrowed.len() == 1000 {
+                // detected switchboard oracle, which uses f64
+                0
             } else {
                 // fall back to legacy flux aggregator
                 let oracle = flux_aggregator::state::Aggregator::load_initialized(&oracle_accs[i])?;
@@ -1741,6 +1745,10 @@ pub fn get_prices(
             let price_account = pyth_client::load_price(&borrowed)?; 
             check_eq!(price_account.get_current_price_status(), PriceStatus::Trading, MangoErrorCode::OracleOffline);
             U64F64::from_num(price_account.agg.price)
+        } else if borrowed.len() == 1000 {
+            // detected switchboard oracle
+            let result = FastRoundResultAccountData::deserialize(&borrowed).unwrap();
+            U64F64::from_num(result.result.result)
         } else {
             // fall back to legacy flux aggregator
             let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
