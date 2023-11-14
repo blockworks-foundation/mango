@@ -1412,7 +1412,7 @@ impl Processor {
                 check!(price_account.expo <= 0, MangoErrorCode::Default);
                 check!(price_account.expo >= -255, MangoErrorCode::Default);
                 price_account.expo.neg() as u8
-            } else if borrowed.len() == 1000 {
+            } else if borrowed.len() == 3851 {
                 // detected switchboard oracle, which uses f64
                 0
             } else {
