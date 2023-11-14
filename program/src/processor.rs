@@ -1745,7 +1745,7 @@ pub fn get_prices(
             let price_account = pyth_client::load_price(&borrowed)?; 
             check_eq!(price_account.get_current_price_status(), PriceStatus::Trading, MangoErrorCode::OracleOffline);
             U64F64::from_num(price_account.agg.price)
-        } else if borrowed.len() == 1000 {
+        } else if borrowed.len() == 3851 {
             // detected switchboard oracle
             let result = FastRoundResultAccountData::deserialize(&borrowed).unwrap();
             U64F64::from_num(result.result.result)
