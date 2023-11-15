@@ -1,5 +1,7 @@
+use std::cell::Ref;
 use std::cmp;
 use std::cmp::min;
+use std::convert::TryInto;
 use std::mem::size_of;
 use std::ops::Neg;
 
@@ -21,7 +23,7 @@ use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
 use solana_program::sysvar::Sysvar;
 use spl_token::state::{Account, Mint};
-use switchboard_utils::FastRoundResultAccountData;
+use switchboard_v2::AggregatorAccountData;
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::instruction::MangoInstruction;
@@ -1402,18 +1404,19 @@ impl Processor {
 
             // determine oracle type
             let borrowed = oracle_accs[i].data.borrow();
-            let magic = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
+            let magic4 = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
+            let magic8 = *array_ref![borrowed, 0, 8];
 
             // read oracle decimals
-            let decimals = if magic == pyth_client::MAGIC {
+            let decimals = if magic4 == pyth_client::MAGIC {
                 // detected pyth oracle
                 let price_account = pyth_client::load_price(&borrowed)?;
                 // usually expo is -8, verify anyways that it's within bounds
                 check!(price_account.expo <= 0, MangoErrorCode::Default);
                 check!(price_account.expo >= -255, MangoErrorCode::Default);
                 price_account.expo.neg() as u8
-            } else if borrowed.len() == 3851 {
-                // detected switchboard oracle, which uses f64
+            } else if magic8 == SWITCHBOARD_MAGIC {
+                // detected switchboard oracle, which uses an internal decimal type, so no corretion needed
                 0
             } else {
                 // fall back to legacy flux aggregator
@@ -1716,6 +1719,8 @@ fn checked_add_borrow(
     Ok(())
 }
 
+const SWITCHBOARD_MAGIC: [u8;8] = [217, 230, 65, 101, 201, 162, 27, 125];
+
 pub fn get_prices(
     mango_group: &MangoGroup,
     oracle_accs: &[AccountInfo]
@@ -1737,18 +1742,24 @@ pub fn get_prices(
 
         // determine oracle type
         let borrowed = oracle_accs[i].data.borrow();
-        let magic = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
+        let magic4 = u32::from_le_bytes(*array_ref![borrowed, 0, 4]);
+        let magic8 = *array_ref![borrowed, 0, 8];
 
         // read oracle value
-        let value = if magic == pyth_client::MAGIC {
+        let value = if magic4 == pyth_client::MAGIC {
             // detected pyth oracle
             let price_account = pyth_client::load_price(&borrowed)?; 
             check_eq!(price_account.get_current_price_status(), PriceStatus::Trading, MangoErrorCode::OracleOffline);
             U64F64::from_num(price_account.agg.price)
-        } else if borrowed.len() == 3851 {
+        } else if magic8 == SWITCHBOARD_MAGIC {
             // detected switchboard oracle
-            let result = FastRoundResultAccountData::deserialize(&borrowed).unwrap();
-            U64F64::from_num(result.result.result)
+            let feed: Ref<'_, AggregatorAccountData> = Ref::map(borrowed, |data|  bytemuck::from_bytes(&data[8..]));
+            let price: f64 = if let Ok(d) = feed.get_result() {
+                d.try_into().unwrap()
+            } else {
+                throw_err!(MangoErrorCode::OracleOffline)?
+            };
+            U64F64::from_num(price)
         } else {
             // fall back to legacy flux aggregator
             let answer = flux_aggregator::read_median(&oracle_accs[i])?; // this is in USD cents
