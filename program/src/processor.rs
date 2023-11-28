@@ -1147,16 +1147,15 @@ impl Processor {
         let clock = Clock::from_account_info(clock_acc)?;
         mango_group.update_indexes(&clock)?;
         let prices = get_prices(&mango_group, oracle_accs)?;
-        let coll_ratio = liqee_margin_account.get_collateral_ratio(
-            &mango_group, &prices, open_orders_accs)?;
+        let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
-            if coll_ratio >= mango_group.init_coll_ratio {
+            if liabs_val <= DUST_THRESHOLD {
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
-        } else if coll_ratio < mango_group.maint_coll_ratio {
+        } else if liabs_val > DUST_THRESHOLD {
             liqee_margin_account.being_liquidated = true;
         } else {
             throw_err!(MangoErrorCode::NotLiquidatable)?;
