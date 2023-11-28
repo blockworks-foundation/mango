@@ -1267,16 +1267,17 @@ impl Processor {
         let prices = get_prices(&mango_group, oracle_accs)?;
         let start_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
         let start_liabs = liqee_margin_account.get_liabs(&mango_group)?;
+        let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
         let coll_ratio = liqee_margin_account.coll_ratio_from_assets_liabs(
             &prices, &start_assets, &start_liabs)?;
 
         // Only allow liquidations on accounts already being liquidated and below init or accounts below maint
         if liqee_margin_account.being_liquidated {
-            if coll_ratio >= mango_group.init_coll_ratio {
+            if liabs_val <= DUST_THRESHOLD {
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
-        } else if coll_ratio >= mango_group.maint_coll_ratio {
+        } else if liabs_val <= DUST_THRESHOLD {
             throw_err!(MangoErrorCode::NotLiquidatable)?;
         }
 
@@ -1286,17 +1287,18 @@ impl Processor {
         }
 
         // Check again to see if account still liquidatable
+        let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
         let coll_ratio = liqee_margin_account.get_collateral_ratio(
             &mango_group, &prices, open_orders_accs)?;
 
         if liqee_margin_account.being_liquidated {
-            if coll_ratio >= mango_group.init_coll_ratio {
+            if liabs_val <= DUST_THRESHOLD {
                 // TODO make sure liquidator knows why tx was success but he didn't receive any funds
                 msg!("Account above init_coll_ratio after settling borrows");
                 liqee_margin_account.being_liquidated = false;
                 return Ok(());
             }
-        } else if coll_ratio >= mango_group.maint_coll_ratio {
+        } else if liabs_val <= DUST_THRESHOLD {
             msg!("Account above maint_coll_ratio after settling borrows");
             return Ok(());
         } else {
@@ -1318,6 +1320,7 @@ impl Processor {
         // Check if account valid now
         let end_assets = liqee_margin_account.get_assets(&mango_group, open_orders_accs)?;
         let end_liabs = liqee_margin_account.get_liabs(&mango_group)?;
+        let liabs_val = liqee_margin_account.get_liabs_val(&mango_group, &prices)?;
         let coll_ratio = liqee_margin_account.coll_ratio_from_assets_liabs(
             &prices, &end_assets, &end_liabs)?;
         let mut total_deposits = [ZERO_U64F64; NUM_TOKENS];
